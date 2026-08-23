@@ -1,0 +1,39 @@
+extends GutTest
+
+const Spec := preload("res://src/tests/shared/spec_cases.gd")
+
+
+func test_board_dimensions() -> void:
+	_assert_case(Spec.board_dimensions())
+
+
+func test_occupancy_conflict() -> void:
+	_assert_case(Spec.occupancy_conflict())
+
+
+func test_enemy_lane_progress() -> void:
+	_assert_case(Spec.enemy_lane_progress())
+
+
+func test_same_unit_upgrade() -> void:
+	_assert_case(Spec.same_unit_upgrade())
+
+
+func test_invalid_upgrade_rejected() -> void:
+	_assert_case(Spec.invalid_upgrade_rejected())
+
+
+func test_fixed_cross_fusion() -> void:
+	_assert_case(Spec.fixed_cross_fusion())
+
+
+func test_invalid_recipe_rejected() -> void:
+	_assert_case(Spec.invalid_recipe_rejected())
+
+
+func test_protected_target_condition() -> void:
+	_assert_case(Spec.protected_target_condition())
+
+
+func _assert_case(result: Dictionary) -> void:
+	assert_true(result["ok"], result["message"])

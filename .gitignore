@@ -1,0 +1,6 @@
+.godot/
+.tools/
+reports/
+*.log
+addons/
+.generated-tests/
