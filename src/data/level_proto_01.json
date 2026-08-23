@@ -1,0 +1,43 @@
+{
+  "level_id": "proto_01_protect_the_grove",
+  "lanes": 5,
+  "columns": 9,
+  "initial_resource": 450,
+  "minimum_protected_trees": 1,
+  "protected_trees": [
+    {"id": "protected_tree_01", "lane": 1, "column": 4, "health": 120},
+    {"id": "protected_tree_02", "lane": 3, "column": 5, "health": 120}
+  ],
+  "waves": [
+    {
+      "start_time": 2.0,
+      "spawns": [
+        {"enemy_id": "enemy_basic", "lane": 0, "delay": 0.0},
+        {"enemy_id": "enemy_basic", "lane": 4, "delay": 4.0},
+        {"enemy_id": "enemy_basic", "lane": 2, "delay": 8.0}
+      ]
+    },
+    {
+      "start_time": 25.0,
+      "spawns": [
+        {"enemy_id": "enemy_tree_targeter", "lane": 1, "delay": 0.0},
+        {"enemy_id": "enemy_tree_targeter", "lane": 3, "delay": 6.0},
+        {"enemy_id": "enemy_basic", "lane": 2, "delay": 12.0},
+        {"enemy_id": "enemy_basic", "lane": 0, "delay": 16.0},
+        {"enemy_id": "enemy_basic", "lane": 4, "delay": 20.0}
+      ]
+    },
+    {
+      "start_time": 60.0,
+      "spawns": [
+        {"enemy_id": "enemy_tree_targeter", "lane": 1, "delay": 0.0},
+        {"enemy_id": "enemy_tree_targeter", "lane": 3, "delay": 3.0},
+        {"enemy_id": "enemy_basic", "lane": 0, "delay": 6.0},
+        {"enemy_id": "enemy_basic", "lane": 1, "delay": 10.0},
+        {"enemy_id": "enemy_basic", "lane": 2, "delay": 14.0},
+        {"enemy_id": "enemy_basic", "lane": 3, "delay": 18.0},
+        {"enemy_id": "enemy_basic", "lane": 4, "delay": 22.0}
+      ]
+    }
+  ]
+}

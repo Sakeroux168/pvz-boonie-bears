@@ -1,0 +1,34 @@
+{
+  "units": [
+    {
+      "id": "unit_a1", "family": "unit_a", "tier": 1, "cost": 50,
+      "max_health": 80, "range_cells": 5.0, "attack_period": 1.0,
+      "damage": 10, "burst_count": 1,
+      "behavior": "single_ranged"
+    },
+    {
+      "id": "unit_a2", "family": "unit_a", "tier": 2, "cost": 0,
+      "max_health": 105, "range_cells": 5.5, "attack_period": 0.95,
+      "damage": 7, "burst_count": 2,
+      "behavior": "double_ranged"
+    },
+    {
+      "id": "unit_a3", "family": "unit_a", "tier": 3, "cost": 0,
+      "max_health": 130, "range_cells": 6.0, "attack_period": 0.9,
+      "damage": 9, "burst_count": 2, "heavy_every": 3, "heavy_damage": 18,
+      "behavior": "double_ranged_with_periodic_heavy"
+    },
+    {
+      "id": "unit_b1", "family": "unit_b", "tier": 1, "cost": 75,
+      "max_health": 180, "range_cells": 1.0, "attack_period": 0.8,
+      "damage": 14, "burst_count": 1,
+      "behavior": "melee_guard"
+    },
+    {
+      "id": "unit_ab", "family": "unit_ab", "tier": 1, "cost": 0,
+      "max_health": 190, "range_cells": 5.0, "attack_period": 1.1,
+      "damage": 9, "guard_damage": 16,
+      "behavior": "ranged_plus_guard_collaboration"
+    }
+  ]
+}

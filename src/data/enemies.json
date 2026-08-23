@@ -1,0 +1,14 @@
+{
+  "enemies": [
+    {
+      "id": "enemy_basic", "max_health": 70, "move_speed": 0.45,
+      "attack_damage": 10, "attack_period": 1.0,
+      "prefers_protected_tree": false
+    },
+    {
+      "id": "enemy_tree_targeter", "max_health": 90, "move_speed": 0.35,
+      "attack_damage": 14, "attack_period": 1.0,
+      "prefers_protected_tree": true
+    }
+  ]
+}

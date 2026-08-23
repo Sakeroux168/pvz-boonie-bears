@@ -1,0 +1,16 @@
+{
+  "recipes": [
+    {
+      "id": "upgrade_a1_to_a2", "input_a": "unit_a1", "input_b": "unit_a1",
+      "result": "unit_a2", "resource_cost": 30, "kind": "same_unit_upgrade"
+    },
+    {
+      "id": "upgrade_a2_to_a3", "input_a": "unit_a2", "input_b": "unit_a2",
+      "result": "unit_a3", "resource_cost": 60, "kind": "same_unit_upgrade"
+    },
+    {
+      "id": "fusion_a1_b1_to_ab", "input_a": "unit_a1", "input_b": "unit_b1",
+      "result": "unit_ab", "resource_cost": 100, "kind": "fixed_cross_unit_fusion"
+    }
+  ]
+}

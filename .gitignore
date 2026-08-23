@@ -4,3 +4,10 @@ reports/
 *.log
 addons/
 .generated-tests/
+
+# P2 build/test artifacts
+.godot/
+addons/
+.tools/
+reports/
+.generated-tests/

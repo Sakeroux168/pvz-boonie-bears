@@ -1,10 +1,10 @@
-; P1 graybox PoC only. Godot is not an approved production dependency.
+; PVZ × Boonie Bears — Playable Prototype (P2). Godot 4.7.2 + GDScript.
 config_version=5
 
 [application]
 
-config/name="P1 Lane Defense Graybox"
-run/main_scene="res://src/battle/main.tscn"
+config/name="PVZ x Boonie Bears - P2 Prototype"
+run/main_scene="res://src/battle/battle_scene.tscn"
 
 [display]
 
