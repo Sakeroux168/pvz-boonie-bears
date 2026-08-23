@@ -2,7 +2,7 @@
 
 - 日期：2026-08-23
 - 状态：P0 候选调研，不批准技术栈或依赖
-- 检查方法：2026-08-23 通过 GitHub 仓库页/API核对默认分支、根目录许可证、README、主要语言和可见维护状态；**Star 只记录为社区信号，不进入推荐评分**。
+- 检查方法：2026-08-23 通过 GitHub 仓库页/API核对默认分支、README、根目录及 README 指向的子目录许可证、主要语言和可见维护状态；**Star 只记录为社区信号，不进入推荐评分**。GitHub 根许可证检测结果必须由 README 与实际许可文件人工复核。
 
 ## 结论先行
 
@@ -10,11 +10,11 @@
 2. 最值得做 PoC 的参考组合是：
    - `quiver-dev/tower-defense-tutorial`：看 Godot 4 塔放置、经济、敌人、UI 与有限状态机；代码 MIT、素材 CC BY 4.0，必须分开履行许可。
    - `GuaraProductions/towerdefensegodot`：看较新的 Godot 4.5 波次/关卡/升级交互；Star 很少但功能与目标相关，正好说明不按热度筛选。
-   - `godot-gdunit-labs/gdUnit4`：若项目批准 Godot，作为自动化测试候选；版本仍需和最终 Godot 版本锁定。
+   - `godot-gdunit-labs/gdUnit4` 与 `bitwes/Gut`：若项目批准 Godot，作为自动化测试的二选一候选；两者都需与最终 Godot 版本锁定，并在 Windows/headless CI 中实测。
    - `godotengine/godot-demo-projects`：以官方示例核对 Godot 惯用法，而不是照抄民间模板结构。
 3. `ape1121/Godot-4-Tower-Defense-Template` 和 `cheng1559/pvz-remake` 适合**阅读/对照**，不适合作为依赖。前者数据结构偏硬编码，后者使用 Cocos Creator/TypeScript 且是对 PVZ 的重制研究，技术栈和 IP 边界都不匹配。
 4. `v-pukman-gd/godot-anti-zombie-game`、`ZixuanShi/PlantsVSZombies`、`laitooo/Plants-vs-Zombies` 未发现明确根许可证；公开可看不等于可复制，放弃直接复用。
-5. `bitwes/Gut` 在检查时 GitHub API 未识别许可证，根目录也未发现许可证文件。即使项目活跃、Star 多，也不应在许可不清时直接采用。可向作者核实或改用许可证清楚的候选。
+5. `bitwes/Gut` **明确使用 MIT License**。官方 README 指向 [`addons/gut/LICENSE.md`](https://github.com/bitwes/Gut/blob/main/addons/gut/LICENSE.md)，许可证文件确认版权人为 Tom “Butch” Wesley。README 还明确列出 GUT 9.7.1 对应 Godot 4.7.x，并为 Godot 4.0—4.7 提供分版本映射。GUT 因此通过许可证门槛并进入测试框架候选，不应因许可证不在根目录而被误判。
 6. “MIT 代码”不覆盖仓库内的第三方素材，也不覆盖 PVZ 或《熊出没》的角色、图像、音乐、名称。每个候选都必须做代码、素材、字体、音频、依赖五层清单。
 
 ## 评价方法
@@ -43,7 +43,7 @@ GitHub 明确说明：没有许可证时默认版权法适用，其他人通常�
 | [ape1121/Godot-4-Tower-Defense-Template](https://github.com/ape1121/Godot-4-Tower-Defense-Template) | Godot 4/GDScript；2024-08-26 | [MIT](https://github.com/ape1121/Godot-4-Tower-Defense-Template/blob/main/LICENSE) | 拖放、升级/出售、两张地图、基础数据表 | README/代码结构以全局字典数据为主，可能与计划中的资源化、数据驱动模块冲突 | 旧版 Godot 4 工程导入；拖放触屏手感与 Windows 鼠标行为都需重测 | **阅读参考**，不作为依赖 |
 | [godotengine/godot-demo-projects](https://github.com/godotengine/godot-demo-projects) | 官方 Godot 示例；2026-08-12 | [MIT](https://github.com/godotengine/godot-demo-projects/blob/master/LICENSE.md) | 输入、2D、UI、保存、导航等官方惯用法与最小示例 | 不是一体化游戏框架；不要把多个 demo 拼成架构 | 选与最终引擎版本一致的分支/标签；示例资产也需读各目录说明 | **权威参考** |
 | [godot-gdunit-labs/gdUnit4](https://github.com/godot-gdunit-labs/gdUnit4) | Godot 4 测试；2026-08-20；可见 4.3—4.7 版本矩阵 | [MIT](https://github.com/godot-gdunit-labs/gdUnit4/blob/master/LICENSE) | GDScript/C#/场景测试、mock、发现、编辑器与命令行 | 插件本身不能替代可测试架构；不应在引擎未决定前提前锁定 | Windows CLI/PowerShell、路径和 CI headless 需要做一条真实流水线；插件版本须固定 | **条件式依赖候选** |
-| [bitwes/Gut](https://github.com/bitwes/Gut) | Godot 测试；2026-08-18 | **GitHub API 未识别许可证，根目录未发现 LICENSE（2026-08-23）** | CLI、JUnit 输出、test doubles 的功能思路 | 未获明确许可前不得复制/集成；Star/活跃度不能替代授权 | CLI 可用性还需 Windows 验证，但许可已先阻断 | **暂停/放弃直接采用**；若作者明确补证再复评 |
+| [bitwes/Gut](https://github.com/bitwes/Gut) | Godot/GDScript 测试；2026-08-18 仍有推送；[README](https://github.com/bitwes/Gut/blob/main/README.md) 映射 GUT 9.7.1→Godot 4.7.x、9.6.1→4.6.x、9.5.0→4.5.x、9.4.0→4.3—4.4 | [MIT，文件位于 `addons/gut/LICENSE.md`](https://github.com/bitwes/Gut/blob/main/addons/gut/LICENSE.md)；README 明确声明 MIT | 丰富断言、参数化测试、full/partial doubles、stubs、spies、CLI、失败退出码、JUnit XML、pre/post hooks；适合 GDScript 单元与节点行为测试 | 框架不能替代可测试架构；版本与 Godot 小版本绑定，不能默认跟随 `main`；与 GdUnit4 的编辑器/场景工作流优劣需用本项目测试样例比较 | 官方 CLI 文档示例基于 Mac/Bash；Windows 需验证 Godot 可执行文件路径、PowerShell/CMD 引号与工作目录、headless 退出码、JUnit 路径/产物上传；需固定 release/tag | **条件式依赖候选**；与 GdUnit4 做同一组 Windows/CI PoC 后二选一，不因 Star 预设胜者 |
 | [derkork/godot-statecharts](https://github.com/derkork/godot-statecharts) | Godot 4 GDScript/C#；2026-06-26 | [代码 MIT](https://github.com/derkork/godot-statecharts/blob/main/LICENSE)；demo 素材可能有各自 CC/公共领域声明 | 状态、守卫、延迟/冷却、调试与暂停可用于复杂 Boss | 5 路普通敌人多为可预测短状态，插件可能比手写 FSM 更重 | Addon 版本与 Godot 版本；demo 素材不要默认随代码许可；Windows 测试脚本需实跑 | **条件式 PoC**，只有复杂度证明确需时再引入 |
 | [limbonaut/limboai](https://github.com/limbonaut/limboai) | Godot 4 C++/GDExtension；2026-08-21 | [代码许可证](https://github.com/limbonaut/limboai/blob/master/LICENSE)；demo 美术含 CC BY 4.0 等单独条款 | 行为树/状态机思想、调试工具 | 固定路线小规模敌人不需要大型 AI 框架；原生扩展增加构建面 | Windows 二进制兼容、Godot 小版本、原生构建/签名、导出平台矩阵 | **P0/P1 不采用**；仅复杂 AI 阶段重评 |
 | [AdamKormos/SaveMadeEasy](https://github.com/AdamKormos/SaveMadeEasy) | Godot/GDScript；2025-01-01 | [MIT](https://github.com/AdamKormos/SaveMadeEasy/blob/main/LICENSE) | 嵌套变量/Resource 保存、加密接口可供 API 对照 | 用设备唯一 ID 等策略可能妨碍跨设备/可移植；插件不替项目定义版本迁移 | Windows 用户数据目录、权限、升级迁移和损坏恢复都需自测 | **阅读/小 PoC**，不自动依赖 |
@@ -58,7 +58,7 @@ GitHub 明确说明：没有许可证时默认版权法适用，其他人通常�
 本次样本给出了三个反例：
 
 - `GuaraProductions/towerdefensegodot` Star 很少，但使用较新的 Godot 4.5，且波次、关卡与升级弹窗都直接对应 PoC 问题；值得阅读。
-- `bitwes/Gut` 活跃且知名，但检查时没有可确认根许可证；许可门槛未过，不能采用。
+- `bitwes/Gut` 的许可证位于 `addons/gut/LICENSE.md` 而非根目录；GitHub 根许可证检测未识别它，但 README 和实际文件明确为 MIT。这个案例说明必须做文件级人工复核，不能把 API 的空结果当成“无许可证”。
 - `quiver-dev/tower-defense-godot4` 可见度较高且最近仍有推送，但作者 README 明示已被新仓库取代；推荐应服从作者维护说明。
 
 因此排序依据是“许可明确 × 版本匹配 × 可转化模块 × 引入成本 × 可测试性”，不是受欢迎程度。
@@ -71,7 +71,7 @@ GitHub 明确说明：没有许可证时默认版权法适用，其他人通常�
 | 角色卡、同角色升级、固定配方 | 是 | W3 原型、数据驱动原则 | 无 | 决定产品差异化，不能交给通用模板 |
 | 波次/Spawn 数据 | 是，参考模式 | Quiver、Guara、Cocos remake | 无 | 可借调度思想，但数据结构需服务世界规则与测试 |
 | 普通敌人状态 | 是 | Quiver FSM、Godot statecharts | `godot-statecharts` 仅条件式 | 普通敌人有限状态足够；Boss 复杂度出现后再评 |
-| 自动化测试 | 测试本身自研 | Godot 官方、GdUnit 文档 | `gdUnit4` 条件式 | 许可证清晰、更新活跃；需先确定 Godot 版本 |
+| 自动化测试 | 测试本身自研 | Godot 官方、GdUnit4 与 GUT 文档 | `gdUnit4` / `GUT` 二选一，均为条件式 | 两者许可证明确且持续适配 Godot 版本；GUT 提供 doubles、CLI、退出码和 JUnit XML。需先确定 Godot 版本，再以同一批项目测试比较 Windows/CI、场景/节点测试与维护成本 |
 | 保存/版本迁移 | 是 | SaveMadeEasy API 及官方文档 | 暂无 | 存档格式是长期契约，插件不能替代项目版本策略 |
 | 美术/音频 | 自制或逐项获权 | 占位素材只用明确许可 | 无整包引入 | 《熊出没》与 PVZ 权利不由代码许可证解决 |
 
@@ -83,7 +83,7 @@ GitHub 明确说明：没有许可证时默认版权法适用，其他人通常�
 2. 若含 Git LFS，先确认 `git lfs pull` 后没有指针文件残留；同时确认 CI runner 安装 LFS。[Git LFS 官方站](https://git-lfs.com/)
 3. 用只区分大小写的代码审查检查路径引用；Windows 本地大小写不敏感可能掩盖 Linux/Web 导出失败。
 4. 检查绝对路径、反斜杠、PowerShell/批处理依赖和非 ASCII 路径。
-5. 在 Godot 编辑器、headless 测试、Windows 导出、Web 导出各运行一次最小场景。
+5. 在 Godot 编辑器、headless 测试、Windows 导出、Web 导出各运行一次最小场景；若测试 GUT，单独核验 PowerShell/CMD 下的 Godot 路径与引号、失败退出码、JUnit XML 生成及 CI artifact 上传。GUT 官方 CLI 文档明确返回成功 `0`/失败 `1` 并支持 JUnit XML，但示例来自 Mac/Bash，Windows 命令不能未经验证照抄。[GUT Command Line（官方）](https://gut.readthedocs.io/en/latest/Command-Line.html)
 6. 对 addon 验证禁用/删除后项目可诊断失败，不让核心数据只存在插件私有格式。
 7. 生成第三方清单：项目名、版本/SHA、代码许可证、素材许可证、版权通知、修改说明、来源 URL。
 8. 对许可证检测结果做人工复核。GitHub 说明 License API 只检测可识别的仓库许可证，不能代替依赖和文件级审计。[GitHub Licenses API](https://docs.github.com/en/rest/licenses/licenses)
@@ -99,7 +99,7 @@ GitHub 明确说明：没有许可证时默认版权法适用，其他人通常�
 ## 推荐的三个小 PoC（若 Godot 获批后）
 
 1. **放置/波次 PoC**：只参考 Quiver + Guara 的信号和管理器边界，自研 5 路棋盘；不搬素材。
-2. **测试 PoC**：固定一个 Godot 版本与一个 GdUnit4 release，验证 Windows headless、JUnit 输出、场景测试和 CI。
+2. **测试框架对照 PoC**：固定一个 Godot 版本，分别固定兼容的 GdUnit4 与 GUT release，用同一批纯逻辑、节点/场景、double/mock 测试验证 Windows headless、失败退出码、JUnit 输出、CI 接入和维护成本；完成后只选一个。若选择 Godot 4.7，GUT 候选应固定 9.7.1，而不是跟随 `main`。
 3. **复杂状态反证 PoC**：用手写 FSM 和 `godot-statecharts` 各做一个两阶段 Boss；只有插件显著降低复杂度且许可/导出均过关才采用。
 
 每个 PoC 应单独记录：来源 commit、拷贝的具体文件/思想、修改、许可证、测试结果和删除成本。
@@ -116,7 +116,6 @@ GitHub 明确说明：没有许可证时默认版权法适用，其他人通常�
 
 - 是否批准 Godot 及具体版本，随后才能锁测试/插件兼容矩阵。
 - 是否批准三个 PoC 的顺序与时间盒。
-- `gdUnit4` 是否作为测试候选进入 P1；`godot-statecharts` 是否仅保留为 Boss 阶段备选。
+- `gdUnit4` 与 `GUT` 是否批准进入同条件测试框架 PoC，并在结果后只选一个；`godot-statecharts` 是否仅保留为 Boss 阶段备选。
 - 第三方通知文件的项目标准与存放位置。
-- 是否向 `bitwes/Gut` 作者核实许可证，还是直接从候选集中移除。
-
+- 若 Godot 获批，测试框架最终采用 GdUnit4 还是 GUT；决定前应比较项目实测，而不是 Star。
