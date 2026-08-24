@@ -30,6 +30,12 @@ jobs:
       - name: H0 - Install GUT 9.7.1
         shell: pwsh
         run: .\scripts\setup-gut.ps1
+      - name: Import project and build class cache
+        shell: pwsh
+        run: |
+          $godot = (Resolve-Path '.tools\godot\Godot_v4.7.2-stable_win64_console.exe').Path
+          & $godot --headless --editor --path . --quit
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Windows main-scene smoke
         shell: pwsh
         run: |
