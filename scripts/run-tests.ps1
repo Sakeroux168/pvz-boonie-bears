@@ -1,10 +1,11 @@
 [CmdletBinding()]
-param([string]$GodotBin = '')
-
+param([Parameter(Mandatory=$true)][string]$GodotBin)
 $ErrorActionPreference = 'Stop'
-& (Join-Path $PSScriptRoot 'run-gut.ps1') -GodotBin $GodotBin
-if ($LASTEXITCODE -ne 0) {
-    exit $LASTEXITCODE
-}
-& (Join-Path $PSScriptRoot 'run-gdunit4.ps1') -GodotBin $GodotBin
-exit $LASTEXITCODE
+$repoRoot = Split-Path -Parent $PSScriptRoot
+& (Join-Path $PSScriptRoot 'setup-gut.ps1')
+$reportRoot = Join-Path $repoRoot 'reports\gut'
+New-Item -ItemType Directory -Force -Path $reportRoot | Out-Null
+& $GodotBin --headless --path $repoRoot -s res://addons/gut/gut_cmdln.gd -gdir=res://src/tests -ginclude_subdirs -gexit -gjunit_xml_file=res://reports/gut/results.xml
+$code = $LASTEXITCODE
+Write-Host "GUT exit code: $code"
+exit $code
