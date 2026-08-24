@@ -13,9 +13,16 @@ func _read_json(path: String) -> Dictionary:
 	return JSON.parse_string(file.get_as_text())
 
 
-func _make_core(columns: int = 9) -> BattleCore:
+func _make_core(columns: int = 9, strip_trees: bool = false) -> BattleCore:
 	var level: Dictionary = _read_json(LEVEL_JSON)
 	level["columns"] = columns
+	if strip_trees:
+		# Pure state-machine scenarios: the level's trees sit at columns 4/5
+		# and would be dropped on a narrow board, instantly failing a
+		# min=1 tree objective. Tree rules are covered separately in
+		# test_protected_tree_rules on the full-size board.
+		level["protected_trees"] = []
+		level["minimum_protected_trees"] = 0
 	var core := BattleCore.new(level)
 	core.load_data(_read_json(UNITS_JSON), _read_json(RECIPES_JSON), _read_json(ENEMIES_JSON))
 	return core
@@ -78,11 +85,13 @@ func test_lane_insurance_only_once() -> void:
 
 
 # Helper: force a placed unit pair for merge tests.
-func _place_pair(core: BattleCore, id_left: String, id_right: String) -> void:
+# Cells are explicit so a test can place multiple pairs on one board.
+func _place_pair(core: BattleCore, id_left: String, id_right: String,
+		left_cell: Vector2i = Vector2i(1, 0), right_cell: Vector2i = Vector2i(3, 0)) -> void:
 	# Give free resource so deploy costs don't matter here.
 	core.wallet.add(10000)
-	assert_eq(core.deploy(id_left, Vector2i(1, 0))["ok"], true)
-	assert_eq(core.deploy(id_right, Vector2i(3, 0))["ok"], true)
+	assert_eq(core.deploy(id_left, left_cell)["ok"], true)
+	assert_eq(core.deploy(id_right, right_cell)["ok"], true)
 
 
 # 6. A1 + A1 -> A2.
@@ -112,7 +121,7 @@ func test_illegal_recipes_rejected() -> void:
 	var result := core.merge_cells(Vector2i(1, 0), Vector2i(3, 0))
 	assert_eq(result["ok"], false)
 	assert_eq(result["reason"], "illegal_recipe")
-	_place_pair(core, "unit_b1", "unit_b1")  # no B+B recipe
+	_place_pair(core, "unit_b1", "unit_b1", Vector2i(1, 1), Vector2i(3, 1))  # no B+B recipe
 	result = core.merge_cells(Vector2i(1, 1), Vector2i(3, 1))
 	assert_eq(result["ok"], false)
 	assert_eq(result["reason"], "illegal_recipe")
@@ -157,17 +166,18 @@ func test_protected_tree_rules() -> void:
 	assert_eq(core.deploy("unit_a1", tree_cell)["ok"], false, "cannot deploy on tree cell")
 	assert_eq(core.board.damage_protected_tree_at(tree_cell, 120), true)
 	assert_false(core.board.protected_target_at(tree_cell)["alive"], "tree dies at 0 hp")
-	assert_false(core.board.protected_objective_met(1), "objective fails with no alive trees")
-	# Fresh core: two trees, need >= 1.
-	var fresh := _make_core()
-	fresh.board.damage_protected_tree_at(tree_cell, 120)
-	assert_true(fresh.board.protected_objective_met(1), "one surviving tree meets min=1")
+	# Level has two trees, minimum is 1: one surviving tree still meets it.
+	assert_true(core.board.protected_objective_met(1),
+			"one surviving tree meets min=1")
+	# A stricter objective (need both trees alive) must fail once one dies.
+	assert_false(core.board.protected_objective_met(2),
+			"objective with min=2 fails when a tree dies")
 
 
 # 12. Victory / defeat state machine core rules.
 func test_victory_and_defeat_outcomes() -> void:
 	# Defeat: enemy crosses finish without insurance.
-	var core := _make_core(3)
+	var core := _make_core(3, true)
 	core.start([{"start_time": 0.0, "spawns": [{"enemy_id": "enemy_basic", "lane": 0, "delay": 0.0}]}])
 	core.board._lane_insurance[0] = false  # insurance already spent
 	for i in range(600):
@@ -176,17 +186,31 @@ func test_victory_and_defeat_outcomes() -> void:
 			break
 	assert_eq(core.outcome, "defeat", "unstopped enemy crossing loses the game")
 
+	# Insurance saves the lane exactly once: first crosser is stopped.
+	var core_ins := _make_core(3, true)
+	core_ins.start([{"start_time": 0.0, "spawns": [{"enemy_id": "enemy_basic", "lane": 2, "delay": 0.0}]}])
+	for i in range(600):
+		core_ins.tick(0.05)
+		if core_ins.outcome != "ongoing":
+			break
+	assert_true(core_ins.waves.active_enemies[0].insurance_triggered,
+			"insurance consumed on first crossing")
+	assert_false(core_ins.waves.active_enemies[0].crossed_finish and not core_ins.waves.active_enemies[0].defeated,
+			"insured crossing does not lose the game")
+	assert_eq(core_ins.outcome, "victory", "sole enemy cleared by insurance ends in victory")
+
 	# Victory: waves all spawned and all enemies defeated.
-	var core2 := _make_core(3)
+	var core2 := _make_core(3, true)
 	core2.start([{"start_time": 0.0, "spawns": [{"enemy_id": "enemy_basic", "lane": 0, "delay": 0.0}]}])
 	core2.tick(0.5)
+	assert_eq(core2.outcome, "ongoing")
 	for enemy in core2.waves.active_enemies:
 		enemy.take_damage(enemy.current_health + 1)
 	core2.tick(0.05)
 	assert_eq(core2.outcome, "victory", "all enemies dead after final wave wins")
 
 	# Ongoing while enemies remain.
-	var core3 := _make_core(3)
+	var core3 := _make_core(3, true)
 	core3.start([{"start_time": 0.0, "spawns": [{"enemy_id": "enemy_basic", "lane": 0, "delay": 0.0}]}])
 	core3.tick(0.5)
 	assert_eq(core3.outcome, "ongoing")

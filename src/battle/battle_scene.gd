@@ -1,4 +1,4 @@
-extends Node
+extends Node2D
 ## Battle scene controller: loads data, drives BattleCore.tick, draws geometry
 ## placeholders and handles mouse drag deploy/fusion. NO rule logic here — all
 ## rules live in BattleCore and its data layer.
@@ -59,7 +59,7 @@ func _draw_grid() -> void:
 		for column in range(core.board.columns):
 			var rect := Rect2(GRID_ORIGIN + Vector2(column * CELL_SIZE, lane * CELL_SIZE),
 					Vector2(CELL_SIZE - 4.0, CELL_SIZE - 4.0))
-			draw_rect(rect, Color(0.13, 0.16, 0.14), true, 2.0)
+			draw_rect(rect, Color(0.13, 0.16, 0.14), true)
 
 
 func _draw_protected_trees() -> void:

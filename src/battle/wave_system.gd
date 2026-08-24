@@ -74,6 +74,6 @@ func purge_defeated() -> void:
 
 func _spawn_enemy(enemy_id: String, lane: int, columns: float,
 		definitions: Dictionary) -> void:
-	var enemy := EnemyState.from_definition(enemy_id, definitions, lane, columns + 0.5)
+	var enemy: EnemyState = EnemyState.from_definition(enemy_id, definitions, lane, columns + 0.5)
 	active_enemies.append(enemy)
 	enemy_spawned.emit(enemy)
