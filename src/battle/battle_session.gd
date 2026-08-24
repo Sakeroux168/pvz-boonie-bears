@@ -34,6 +34,8 @@ func deploy(unit_id: String, cell: Vector2i) -> Dictionary:
 	var definition := repository.unit_def(unit_id)
 	if definition.is_empty():
 		return _reject("unknown_unit")
+	if not board.is_inside(cell):
+		return _reject("invalid_cell")
 	if not board.is_empty(cell):
 		return _reject("cell_occupied")
 	var cost := int(definition.get("cost", 0))

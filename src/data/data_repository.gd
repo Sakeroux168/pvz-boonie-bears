@@ -12,7 +12,7 @@ func load_all(level_path: String = "res://src/data/level_playable.json") -> bool
 	var recipe_doc := _load_json("res://src/data/recipes.json")
 	recipes = recipe_doc.get("recipes", [])
 	level = _load_json(level_path)
-	return not units.is_empty() and not enemies.is_empty() and not level.is_empty()
+	return not units.is_empty() and not enemies.is_empty() and not recipes.is_empty() and not level.is_empty()
 
 func unit_def(unit_id: String) -> Dictionary:
 	return units.get(unit_id, {}).duplicate(true)
