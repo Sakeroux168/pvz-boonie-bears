@@ -83,6 +83,9 @@ func tick(delta: float) -> void:
 	elapsed += delta
 	_spawn_due_waves()
 	_tick_enemies(delta)
+	if state != STATE_RUNNING:
+		_cleanup_enemies()
+		return
 	_tick_units(delta)
 	_cleanup_enemies()
 	if not tree_rule.is_met(board):
