@@ -139,3 +139,92 @@ func test_pointer_router_accepts_mouse_and_touch() -> void:
 
 func _empty_level(initial_resource: int) -> Dictionary:
 	return {"id":"test","lanes":5,"columns":9,"initial_resource":initial_resource,"minimum_protected_trees":0,"protected_trees":[],"waves":[]}
+
+# --- Codex review round 2 regression tests ---
+
+func _battle_with_unit(unit_id: String, cell: Vector2i, resource: int = 1000) -> BattleSession:
+	var battle := BattleSession.new(repository, _empty_level(resource))
+	assert_true(battle.deploy(unit_id, cell)["ok"])
+	return battle
+
+func _wave(enemy: String, lane: int, at: float = 0.0, speed: float = 0.1, column: float = 8.0, health: int = 1000) -> Dictionary:
+	return {"at":at,"enemy":enemy,"lane":lane,"speed_override":speed,"start_column_override":column,"health_override":health}
+
+func test_fast_enemy_cannot_tunnel_past_blocking_unit() -> void:
+	# Regression: a high move_speed * delta once jumped the 0.65-cell contact
+	# window in one advance(), letting enemies bypass blockers entirely.
+	var battle := _battle_with_unit("unit_b_1", Vector2i(4, 0))
+	var enemy := EnemyState.from_definition({"id":"e","move_speed":60.0,"max_health":100000,"attack_damage":1,"attack_period":0.5}, 0, 8.0)
+	battle.enemies.append(enemy)
+	for _i in range(10):
+		battle.tick(0.5)
+		if battle.state != BattleSession.STATE_RUNNING:
+			break
+	assert_true(is_instance_valid(enemy))
+	assert_false(enemy.crossed_finish, "fast enemy must stop at the blocker, not tunnel past")
+	assert_true(battle.board.cell_value(Vector2i(4, 0)) is UnitState, "blocker still on board")
+	assert_lt(enemy.progress_column, 4.6, "enemy held inside contact window of blocker")
+
+func test_fast_tree_targeter_cannot_tunnel_past_protected_tree() -> void:
+	var level := _empty_level(500)
+	level["protected_trees"] = [{"id":"tree","lane":2,"column":5,"health":100000}]
+	var battle := BattleSession.new(repository, level)
+	var enemy := EnemyState.from_definition({"id":"e","move_speed":60.0,"max_health":100000,"attack_damage":1,"attack_period":0.5,"prefers_tree":true}, 2, 8.0)
+	battle.enemies.append(enemy)
+	for _i in range(10):
+		battle.tick(0.5)
+		if battle.state != BattleSession.STATE_RUNNING:
+			break
+	assert_false(enemy.crossed_finish, "fast tree-targeter must stop at the tree, not tunnel past")
+	assert_true(battle.tree_rule.is_met(battle.board), "tree still alive")
+
+func test_unknown_enemy_wave_enters_config_error_instead_of_fake_victory() -> void:
+	# Regression: unknown enemy used to be skipped while next_wave_index still
+	# advanced, producing a false victory once the board emptied.
+	var level := _empty_level(500)
+	level["waves"] = [_wave("enemy_basic", 0), _wave("enemy_does_not_exist", 1, 1.0)]
+	var battle := BattleSession.new(repository, level)
+	for _i in range(60):
+		battle.tick(0.1)
+		if battle.state != BattleSession.STATE_RUNNING:
+			break
+	assert_eq(battle.state, BattleSession.STATE_CONFIG_ERROR)
+	assert_ne(battle.state, BattleSession.STATE_VICTORY)
+
+func test_a2_double_ranged_deals_burst_damage() -> void:
+	# H3 behavior check: unit_a_2 fires burst_count=2 shots of damage=8.
+	var battle := _battle_with_unit("unit_a_2", Vector2i(0, 0))
+	var enemy := EnemyState.from_definition({"id":"e","move_speed":0.0,"max_health":100,"attack_damage":0}, 0, 2.0)
+	battle.enemies.append(enemy)
+	battle.tick(0.1)
+	assert_eq(enemy.health, 84, "one volley deals 8 x 2 burst damage")
+	battle.tick(0.1)
+	assert_eq(enemy.health, 84, "no second volley before attack_period elapses")
+	battle.tick(0.8)
+	assert_eq(enemy.health, 68, "second volley after attack_period")
+
+func test_a3_heavy_strike_every_third_shot() -> void:
+	# H3 behavior check: unit_a_3 deals 10x2, and every 3rd volley adds +18.
+	var battle := _battle_with_unit("unit_a_3", Vector2i(0, 0))
+	var enemy := EnemyState.from_definition({"id":"e","move_speed":0.0,"max_health":1000,"attack_damage":0}, 0, 2.0)
+	battle.enemies.append(enemy)
+	battle.tick(0.1)
+	assert_eq(enemy.health, 980, "volley 1: 10 x 2")
+	battle.tick(0.9)
+	assert_eq(enemy.health, 960, "volley 2: 10 x 2")
+	battle.tick(0.9)
+	assert_eq(enemy.health, 922, "volley 3: 10 x 2 + 18 heavy")
+	battle.tick(0.9)
+	assert_eq(enemy.health, 902, "volley 4: heavy counter resets, 10 x 2")
+
+func test_ab_guard_bonus_applies_only_in_close_range() -> void:
+	# H3 behavior check: unit_ab adds guard_damage when target within 1.0.
+	var battle := _battle_with_unit("unit_ab", Vector2i(0, 0))
+	var close := EnemyState.from_definition({"id":"c","move_speed":0.0,"max_health":100,"attack_damage":0}, 0, 0.9)
+	var far := EnemyState.from_definition({"id":"f","move_speed":0.0,"max_health":100,"attack_damage":0}, 0, 3.0)
+	battle.enemies.append(close)
+	battle.enemies.append(far)
+	battle.tick(0.1)
+	assert_eq(close.health, 72, "close target takes 10 + 18 guard damage (100-28)")
+	assert_eq(far.health, 100, "ranged part only reaches nearest; far target untouched this volley")
+

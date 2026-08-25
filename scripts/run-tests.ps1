@@ -12,13 +12,13 @@ New-Item -ItemType Directory -Force -Path $reportRoot | Out-Null
 # the PR #6 branch where the approach was verified.)
 $gutArgs = @(
     '--headless',
-    ('--path ' + $repoRoot),
+    "--path `"$repoRoot`"",
     '-s', 'res://addons/gut/gut_cmdln.gd',
     '-gdir=res://src/tests', '-ginclude_subdirs',
     '-gjunit_xml_file=res://reports/gut/results.xml',
     '-gexit'
 )
-$proc = Start-Process -FilePath $GodotBin -ArgumentList $gutArgs -Wait -PassThru -NoNewWindow
+$proc = Start-Process -FilePath $GodotBin -ArgumentList $gutArgs -Wait -PassThru -NoNewWindow -WorkingDirectory $repoRoot
 $code = $proc.ExitCode
 Write-Host "GUT exit code: $code"
 exit $code

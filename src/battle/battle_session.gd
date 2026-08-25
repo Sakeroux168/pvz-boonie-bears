@@ -4,6 +4,11 @@ extends RefCounted
 const STATE_RUNNING := "running"
 const STATE_VICTORY := "victory"
 const STATE_FAILURE := "failure"
+const STATE_CONFIG_ERROR := "config_error"
+# Maximum distance an enemy may travel within one combat substep. The melee
+# contact window is 0.65 cells wide, so capping substep movement below that
+# guarantees a fast enemy can never tunnel past a blocker in a single frame.
+const MAX_SUBSTEP_TRAVEL := 0.5
 const UNDO_WINDOW_MS := 3000
 
 var repository: GameDataRepository
@@ -84,6 +89,8 @@ func tick(delta: float) -> void:
 		return
 	elapsed += delta
 	_spawn_due_waves()
+	if state != STATE_RUNNING:
+		return
 	_tick_enemies(delta)
 	if state != STATE_RUNNING:
 		_cleanup_enemies()
@@ -103,14 +110,18 @@ func _spawn_due_waves() -> void:
 		var wave: Dictionary = waves[next_wave_index]
 		if float(wave.get("at", 0.0)) > elapsed:
 			break
-		_spawn_enemy_from_wave(wave)
+		if not _spawn_enemy_from_wave(wave):
+			# A wave referencing an unknown enemy is a data error: halt the
+			# battle instead of counting the wave as done (fake victory).
+			state = STATE_CONFIG_ERROR
+			printerr("Wave %d references unknown enemy, halting battle." % next_wave_index)
+			return
 		next_wave_index += 1
 
-func _spawn_enemy_from_wave(wave: Dictionary) -> void:
+func _spawn_enemy_from_wave(wave: Dictionary) -> bool:
 	var definition := repository.enemy_def(String(wave.get("enemy", "")))
 	if definition.is_empty():
-		push_error("Unknown enemy in wave: %s" % wave.get("enemy", ""))
-		return
+		return false
 	if wave.has("health_override"):
 		definition["max_health"] = int(wave["health_override"])
 	if wave.has("speed_override"):
@@ -119,6 +130,7 @@ func _spawn_enemy_from_wave(wave: Dictionary) -> void:
 		definition["attack_damage"] = int(wave["attack_damage_override"])
 	var start_column := float(wave.get("start_column_override", float(board.columns) + 0.35))
 	enemies.append(EnemyState.from_definition(definition, int(wave.get("lane", 0)), start_column))
+	return true
 
 func _tick_enemies(delta: float) -> void:
 	for enemy in enemies:
@@ -151,7 +163,7 @@ func _tick_enemies(delta: float) -> void:
 					attacked = true
 					break
 		if not attacked:
-			enemy.advance(delta)
+			_substep_advance(enemy, delta)
 		if enemy.crossed_finish:
 			if board.consume_insurance(enemy.lane):
 				for lane_enemy in enemies:
@@ -160,6 +172,36 @@ func _tick_enemies(delta: float) -> void:
 			else:
 				state = STATE_FAILURE
 				return
+
+# Moves an enemy in bounded substeps, re-checking contact after each substep
+# so a high move_speed (or a long frame) cannot tunnel past a unit or tree.
+func _substep_advance(enemy: EnemyState, delta: float) -> void:
+	var remaining := enemy.move_speed * delta
+	while remaining > 0.001 and not enemy.crossed_finish:
+		# advance() takes seconds; cap the DISTANCE per substep.
+		var step := remaining
+		if enemy.move_speed > 0.0:
+			step = minf(step, MAX_SUBSTEP_TRAVEL / enemy.move_speed)
+		remaining = maxf(0.0, remaining - step * enemy.move_speed)
+		enemy.advance(step)
+		if enemy.defeated:
+			return
+		if _enemy_has_contact(enemy):
+			return
+
+func _enemy_has_contact(enemy: EnemyState) -> bool:
+	if enemy.prefers_tree:
+		for tree_cell in board.tree_positions():
+			var tree := board.tree_at(tree_cell)
+			if tree_cell.y == enemy.lane and bool(tree.get("alive", false)) and absf(enemy.progress_column - float(tree_cell.x)) <= 0.55:
+				return true
+	for unit_cell in board.unit_positions():
+		if unit_cell.y != enemy.lane:
+			continue
+		var distance := enemy.progress_column - float(unit_cell.x)
+		if distance >= -0.1 and distance <= 0.55:
+			return true
+	return false
 
 func _tick_units(delta: float) -> void:
 	for unit_cell in board.unit_positions():
