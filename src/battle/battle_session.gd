@@ -175,15 +175,14 @@ func _tick_enemies(delta: float) -> void:
 
 # Moves an enemy in bounded substeps, re-checking contact after each substep
 # so a high move_speed (or a long frame) cannot tunnel past a unit or tree.
+# Budget is kept in DISTANCE cells: step_distance <= MAX_SUBSTEP_TRAVEL,
+# converted to seconds for advance() as step_distance / move_speed.
 func _substep_advance(enemy: EnemyState, delta: float) -> void:
-	var remaining := enemy.move_speed * delta
-	while remaining > 0.001 and not enemy.crossed_finish:
-		# advance() takes seconds; cap the DISTANCE per substep.
-		var step := remaining
-		if enemy.move_speed > 0.0:
-			step = minf(step, MAX_SUBSTEP_TRAVEL / enemy.move_speed)
-		remaining = maxf(0.0, remaining - step * enemy.move_speed)
-		enemy.advance(step)
+	var remaining_distance := enemy.move_speed * delta
+	while remaining_distance > 0.0001 and not enemy.crossed_finish:
+		var step_distance := minf(remaining_distance, MAX_SUBSTEP_TRAVEL)
+		remaining_distance -= step_distance
+		enemy.advance(step_distance / enemy.move_speed)
 		if enemy.defeated:
 			return
 		if _enemy_has_contact(enemy):

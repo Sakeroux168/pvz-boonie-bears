@@ -228,3 +228,22 @@ func test_ab_guard_bonus_applies_only_in_close_range() -> void:
 	assert_eq(close.health, 72, "close target takes 10 + 18 guard damage (100-28)")
 	assert_eq(far.health, 100, "ranged part only reaches nearest; far target untouched this volley")
 
+func test_substep_advance_distance_is_exact_across_speeds_and_deltas() -> void:
+	# Regression (GPT review round 3): the substep budget once mixed time and
+	# distance units, making real speed depend on move_speed and frame rate.
+	# With no blocker on the board, one tick must move exactly
+	# move_speed * delta cells, for slow, mid and fast enemies and for
+	# common frame deltas.
+	var battle := BattleSession.new(repository, _empty_level(500))
+	var cases := [[0.34, 1.0/30.0], [0.42, 1.0/60.0], [2.0, 1.0/60.0], [60.0, 1.0/60.0], [2.0, 1.0/120.0], [0.42, 0.5]]
+	for case in cases:
+		var speed: float = case[0]
+		var delta: float = case[1]
+		var enemy := EnemyState.from_definition({"id":"e","move_speed":speed,"max_health":10,"attack_damage":0}, 0, 9.0)
+		battle.enemies.append(enemy)
+		battle._substep_advance(enemy, delta)
+		var expected: float = 9.0 - speed * delta
+		assert_almost_eq(enemy.progress_column, expected, 0.0001, "speed=%s delta=%s must advance exactly speed*delta" % [speed, delta])
+		assert_false(enemy.crossed_finish)
+		battle.enemies.clear()
+
