@@ -1,13 +1,11 @@
-; P1 graybox PoC only. Godot is not an approved production dependency.
+; Formal P2 playable prototype.
 config_version=5
 
 [application]
-
-config/name="P1 Lane Defense Graybox"
-run/main_scene="res://src/battle/main.tscn"
+config/name="Boonie Bears Lane Defense - P2 Prototype"
+run/main_scene="res://src/app/main.tscn"
 
 [display]
-
 window/size/viewport_width=1280
 window/size/viewport_height=720
 window/size/window_width_override=1280
@@ -15,7 +13,6 @@ window/size/window_height_override=720
 window/stretch/mode="canvas_items"
 
 [rendering]
-
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
-environment/defaults/default_clear_color=Color(0.055, 0.067, 0.082, 1)
+environment/defaults/default_clear_color=Color(0.045, 0.06, 0.075, 1)

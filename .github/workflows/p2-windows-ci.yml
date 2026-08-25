@@ -1,0 +1,55 @@
+name: P2 Windows Godot + GUT
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  windows-p2:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download Godot 4.7.2
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path .tools\godot | Out-Null
+          $zip = '.tools\Godot_v4.7.2-stable_win64.exe.zip'
+          Invoke-WebRequest -UseBasicParsing -Uri 'https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_win64.exe.zip' -OutFile $zip
+          $actual = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash
+          $expected = '731980F9608D61333E5BAF54A2EF17210ACC7A538446C0CB9969F002ACA1E953'
+          if ($actual -ne $expected) { throw "Godot SHA mismatch: $actual" }
+          Expand-Archive -LiteralPath $zip -DestinationPath .tools\godot -Force
+      - name: H0 - Godot version
+        shell: pwsh
+        run: |
+          $godot = (Resolve-Path '.tools\godot\Godot_v4.7.2-stable_win64_console.exe').Path
+          & $godot --version
+      - name: H0 - Install GUT 9.7.1
+        shell: pwsh
+        run: .\scripts\setup-gut.ps1
+      - name: Import project and build class cache
+        shell: pwsh
+        run: |
+          $godot = (Resolve-Path '.tools\godot\Godot_v4.7.2-stable_win64_console.exe').Path
+          & $godot --headless --editor --path . --quit
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Windows main-scene smoke
+        shell: pwsh
+        run: |
+          $godot = (Resolve-Path '.tools\godot\Godot_v4.7.2-stable_win64_console.exe').Path
+          .\scripts\smoke-windows.ps1 -GodotBin $godot
+      - name: GUT headless tests
+        shell: pwsh
+        run: |
+          $godot = (Resolve-Path '.tools\godot\Godot_v4.7.2-stable_win64_console.exe').Path
+          .\scripts\run-tests.ps1 -GodotBin $godot
+      - name: Upload run evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-windows-evidence
+          path: |
+            reports/**

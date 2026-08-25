@@ -1,0 +1,19 @@
+{
+  "id":"p2_playable",
+  "lanes":5,
+  "columns":9,
+  "initial_resource":650,
+  "minimum_protected_trees":1,
+  "protected_trees":[
+    {"id":"protected_tree_01","lane":1,"column":4,"health":120},
+    {"id":"protected_tree_02","lane":3,"column":5,"health":120}
+  ],
+  "waves":[
+    {"at":1.0,"enemy":"enemy_basic","lane":0},
+    {"at":2.0,"enemy":"enemy_basic","lane":2},
+    {"at":3.0,"enemy":"enemy_tree_targeter","lane":1},
+    {"at":5.0,"enemy":"enemy_basic","lane":4},
+    {"at":6.5,"enemy":"enemy_tree_targeter","lane":3},
+    {"at":8.0,"enemy":"enemy_basic","lane":2}
+  ]
+}
