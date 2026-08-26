@@ -34,6 +34,7 @@ static func _validate_grid(level: Dictionary, problems: Array[String]) -> void:
 
 static func _validate_trees(level: Dictionary, problems: Array[String]) -> void:
 	var seen_ids := {}
+	var seen_cells := {}
 	for tree in level.get("protected_trees", []):
 		var tree_id := String(tree.get("id", ""))
 		if tree_id.is_empty():
@@ -43,13 +44,18 @@ static func _validate_trees(level: Dictionary, problems: Array[String]) -> void:
 			problems.append("protected_tree id '%s' duplicated" % tree_id)
 		seen_ids[tree_id] = true
 		var cell := Vector2i(int(tree.get("column", 0)), int(tree.get("lane", 0)))
+		if seen_cells.has(cell):
+			problems.append("protected_tree '%s' shares cell %s with '%s'"
+					% [tree_id, str(cell), String(seen_cells[cell])])
+		else:
+			seen_cells[cell] = tree_id
 		if cell.x < 0 or cell.x >= int(level.get("columns", 0)) \
 				or cell.y < 0 or cell.y >= int(level.get("lanes", 0)):
 			problems.append("protected_tree '%s' at %s is outside the board" % [tree_id, str(cell)])
 		if int(tree.get("health", 0)) <= 0:
 			problems.append("protected_tree '%s' has non-positive health" % tree_id)
-	if int(level.get("minimum_protected_trees", 0)) > seen_ids.size():
-		problems.append("minimum_protected_trees exceeds the number of defined trees")
+	if int(level.get("minimum_protected_trees", 0)) > seen_cells.size():
+		problems.append("minimum_protected_trees exceeds the number of distinct tree cells (%d)" % seen_cells.size())
 
 
 static func _validate_waves(level: Dictionary, enemies: Dictionary,

@@ -422,6 +422,37 @@ func test_validator_flags_recipe_with_unknown_result() -> void:
 	var problems := LevelValidator.validate(_empty_level(500), repository.units, repository.enemies, recipes)
 	assert_true(problems.any(func(p: String) -> bool: return p.contains("unit_ghost")))
 
+func test_validator_flags_two_trees_sharing_one_cell() -> void:
+	# Regression (GPT review on PR #7): two different tree ids occupying the
+	# same (lane, column) passed validation, but BoardState.place_tree()
+	# silently drops the second one — the level would run with fewer trees
+	# than configured and minimum_protected_trees could become unmeetable.
+	var level := _empty_level(500)
+	level["minimum_protected_trees"] = 2
+	level["protected_trees"] = [
+		{"id":"tree_a","lane":2,"column":4,"health":100},
+		{"id":"tree_b","lane":2,"column":4,"health":100},
+	]
+	var problems := LevelValidator.validate(level, repository.units, repository.enemies, repository.recipes)
+	assert_true(problems.any(func(p: String) -> bool: return p.contains("shares cell")),
+			"duplicate tree cell must be flagged")
+	assert_true(problems.any(func(p: String) -> bool: return p.contains("minimum_protected_trees")),
+			"min trees must also be reported as unmeetable")
+
+func test_repository_load_all_fails_loud_on_duplicate_tree_cell() -> void:
+	# End-to-end: the duplicate-cell config must fail at load_all() time.
+	var bad_repo := GameDataRepository.new()
+	var tmp_path := "res://reports/test_dup_tree_level.json"
+	if not DirAccess.dir_exists_absolute("res://reports"):
+		DirAccess.make_dir_recursive_absolute("res://reports")
+	var file := FileAccess.open(tmp_path, FileAccess.WRITE)
+	file.store_string(JSON.stringify({"id":"dup_tree","lanes":5,"columns":9,"initial_resource":500,"minimum_protected_trees":1,"protected_trees":[{"id":"t1","lane":1,"column":4,"health":100},{"id":"t2","lane":1,"column":4,"health":100}],"waves":[]}))
+	file.close()
+	GutUtils.get_error_tracker().disabled = true
+	assert_false(bad_repo.load_all(tmp_path), "duplicate tree cell must fail loud")
+	GutUtils.get_error_tracker().disabled = false
+	DirAccess.remove_absolute(tmp_path)
+
 func test_repository_load_all_fails_loud_on_invalid_level_file() -> void:
 	var bad_repo := GameDataRepository.new()
 	# A level file with an unknown wave enemy must make load_all() fail
