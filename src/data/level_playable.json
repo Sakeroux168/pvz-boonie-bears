@@ -3,6 +3,7 @@
   "lanes":5,
   "columns":9,
   "initial_resource":650,
+  "deck":["unit_a_1","unit_b_1"],
   "minimum_protected_trees":1,
   "protected_trees":[
     {"id":"protected_tree_01","lane":1,"column":4,"health":120},

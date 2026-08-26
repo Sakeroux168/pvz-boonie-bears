@@ -2,8 +2,11 @@ extends Node2D
 
 const BOARD_ORIGIN := Vector2(120.0, 105.0)
 const BOARD_SIZE := Vector2(900.0, 500.0)
-const CARD_A_RECT := Rect2(1060.0, 170.0, 170.0, 70.0)
-const CARD_B_RECT := Rect2(1060.0, 260.0, 170.0, 70.0)
+# Cards are laid out from the level's deck config; no per-unit constants here.
+const CARD_ORIGIN := Vector2(1060.0, 170.0)
+const CARD_SIZE := Vector2(170.0, 70.0)
+const CARD_SPACING := 90.0
+const CARD_COLORS := [Color(0.15, 0.55, 0.75), Color(0.72, 0.4, 0.12), Color(0.4, 0.62, 0.2), Color(0.55, 0.35, 0.7)]
 
 var repository := GameDataRepository.new()
 var session: BattleSession
@@ -12,13 +15,41 @@ var drag_payload: Dictionary = {}
 var pointer_position := Vector2.ZERO
 var hover_cell := Vector2i(-1, -1)
 var status_text := "Drag cards to deploy. Drag a unit onto another to merge."
+# Deck entries: [{"unit_id": String, "rect": Rect2, "cost": int}] — built once
+# from level.deck + repository unit definitions (single source of truth for cost).
+var deck_cards: Array[Dictionary] = []
 
 func _ready() -> void:
 	if not repository.load_all():
 		push_error("P2 data failed to load")
 		return
+	_build_deck_cards()
 	session = BattleSession.new(repository)
 	queue_redraw()
+
+# Deck comes from the level config; cost always reads the unit definition so
+# JSON and Battle Core share one source of truth. Adding a third or fourth
+# character is a data edit, not a UI code change.
+func _build_deck_cards() -> void:
+	deck_cards.clear()
+	var deck: Array = repository.level.get("deck", [])
+	for index in deck.size():
+		var unit_id := String(deck[index])
+		var definition := repository.unit_def(unit_id)
+		if definition.is_empty():
+			push_error("Deck references unknown unit '%s' — card skipped." % unit_id)
+			continue
+		deck_cards.append({
+			"unit_id": unit_id,
+			"rect": Rect2(CARD_ORIGIN + Vector2(0.0, CARD_SPACING * index), CARD_SIZE),
+			"cost": int(definition.get("cost", 0)),
+		})
+
+func _card_at(point: Vector2) -> Dictionary:
+	for card in deck_cards:
+		if (card["rect"] as Rect2).has_point(point):
+			return card
+	return {}
 
 func _process(delta: float) -> void:
 	if session == null:
@@ -44,11 +75,9 @@ func _unhandled_input(event: InputEvent) -> void:
 func _begin_drag(point: Vector2) -> void:
 	if session == null or session.state != BattleSession.STATE_RUNNING:
 		return
-	if CARD_A_RECT.has_point(point):
-		drag_payload = {"kind": "card", "unit_id": "unit_a_1"}
-		return
-	if CARD_B_RECT.has_point(point):
-		drag_payload = {"kind": "card", "unit_id": "unit_b_1"}
+	var card := _card_at(point)
+	if not card.is_empty():
+		drag_payload = {"kind": "card", "unit_id": String(card["unit_id"])}
 		return
 	var cell := _cell_from_point(point)
 	var value = session.board.cell_value(cell)
@@ -150,10 +179,15 @@ func _draw_enemy(center: Vector2, enemy: EnemyState, font: Font) -> void:
 
 func _draw_cards(font: Font) -> void:
 	draw_string(font, Vector2(1060, 125), "CARDS", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color.WHITE)
-	draw_rect(CARD_A_RECT, Color(0.15, 0.55, 0.75), true)
-	draw_string(font, CARD_A_RECT.position + Vector2(20, 42), "unit_a_1  cost 50", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color.WHITE)
-	draw_rect(CARD_B_RECT, Color(0.72, 0.4, 0.12), true)
-	draw_string(font, CARD_B_RECT.position + Vector2(20, 42), "unit_b_1  cost 75", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color.WHITE)
+	for index in deck_cards.size():
+		var card: Dictionary = deck_cards[index]
+		var rect: Rect2 = card["rect"]
+		draw_rect(rect, CARD_COLORS[index % CARD_COLORS.size()], true)
+		# Cost shown on the card comes from the same unit definition the
+		# Battle Session spends against.
+		draw_string(font, rect.position + Vector2(20, 42),
+				"%s  cost %d" % [card["unit_id"], int(card["cost"])],
+				HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color.WHITE)
 	draw_string(font, Vector2(1060, 385), "A1+A1 -> A2", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.8, 0.9, 0.95))
 	draw_string(font, Vector2(1060, 410), "A2+A2 -> A3", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.8, 0.9, 0.95))
 	draw_string(font, Vector2(1060, 435), "A1+B1 -> AB", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.8, 0.9, 0.95))

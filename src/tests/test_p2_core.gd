@@ -247,3 +247,196 @@ func test_substep_advance_distance_is_exact_across_speeds_and_deltas() -> void:
 		assert_false(enemy.crossed_finish)
 		battle.enemies.clear()
 
+# --- H4A-4: tiny-speed epsilon regression ---
+
+func test_substep_advance_tiny_speed_still_moves_each_frame() -> void:
+	# Regression (H4A-4): the old `remaining_distance > 0.0001` floor
+	# permanently swallowed the ~0.0000167 cells/frame that a move_speed of
+	# 0.001 produces at 60 fps, freezing slow enemies forever.
+	var battle := BattleSession.new(repository, _empty_level(500))
+	var enemy := EnemyState.from_definition({"id":"slow","move_speed":0.001,"max_health":10,"attack_damage":0}, 0, 9.0)
+	battle.enemies.append(enemy)
+	battle._substep_advance(enemy, 1.0 / 60.0)
+	assert_almost_eq(enemy.progress_column, 9.0 - 0.001 / 60.0, 0.0000001,
+			"move_speed=0.001 must advance its full speed*delta in one 60fps frame")
+
+func test_substep_advance_tiny_speed_accumulates_over_frames() -> void:
+	var battle := BattleSession.new(repository, _empty_level(500))
+	var enemy := EnemyState.from_definition({"id":"slow","move_speed":0.001,"max_health":10,"attack_damage":0}, 0, 9.0)
+	battle.enemies.append(enemy)
+	for _frame in range(600):
+		battle._substep_advance(enemy, 1.0 / 60.0)
+	assert_almost_eq(enemy.progress_column, 9.0 - 0.01, 0.000001,
+			"600 frames at 0.001 cells/s must accumulate exactly 0.01 cells")
+
+func test_substep_advance_zero_speed_is_safe() -> void:
+	# move_speed <= 0 must not divide by zero or loop forever.
+	var battle := BattleSession.new(repository, _empty_level(500))
+	var enemy := EnemyState.from_definition({"id":"statue","move_speed":0.0,"max_health":10,"attack_damage":0}, 0, 9.0)
+	battle.enemies.append(enemy)
+	battle._substep_advance(enemy, 1.0 / 60.0)
+	assert_eq(enemy.progress_column, 9.0, "zero speed must not move")
+	assert_false(enemy.crossed_finish)
+
+func test_normal_and_fast_speeds_do_not_regress() -> void:
+	# Guard against over-correcting: exact displacement for normal speeds and
+	# tunnel protection for fast ones must both keep working.
+	var battle := BattleSession.new(repository, _empty_level(500))
+	for speed in [0.34, 0.42, 2.0]:
+		var enemy := EnemyState.from_definition({"id":"e","move_speed":speed,"max_health":10,"attack_damage":0}, 0, 5.34)
+		battle.enemies.append(enemy)
+		battle._substep_advance(enemy, 1.0)
+		assert_almost_eq(enemy.progress_column, 5.34 - speed, 0.0001,
+				"speed %s must advance exactly speed*1.0" % str(speed))
+		battle.enemies.clear()
+
+func test_fast_enemy_with_tiny_delta_still_blocked_by_unit() -> void:
+	# High speed + small frames: contact re-check must still stop the enemy
+	# at the blocker instead of tunnelling through it.
+	var battle := _battle_with_unit("unit_b_1", Vector2i(4, 0))
+	var enemy := EnemyState.from_definition({"id":"fast","move_speed":60.0,"max_health":100000,"attack_damage":1,"attack_period":100.0}, 0, 8.0)
+	battle.enemies.append(enemy)
+	for _frame in range(120):
+		battle.tick(1.0 / 60.0)
+	assert_lt(enemy.progress_column, 4.6, "fast enemy held inside the contact window")
+	assert_true(battle.board.cell_value(Vector2i(4, 0)) is UnitState, "blocker survived")
+
+func test_fast_tree_targeter_with_small_frames_cannot_tunnel_past_tree() -> void:
+	var level := _empty_level(500)
+	level["protected_trees"] = [{"id":"tree","lane":2,"column":5,"health":100000}]
+	var battle := BattleSession.new(repository, level)
+	var enemy := EnemyState.from_definition({"id":"fast","move_speed":60.0,"max_health":100000,"attack_damage":1,"attack_period":100.0,"prefers_tree":true}, 2, 8.0)
+	battle.enemies.append(enemy)
+	for _frame in range(120):
+		battle.tick(1.0 / 60.0)
+	assert_lt(enemy.progress_column, 5.6, "tree targeter held inside tree contact window")
+	assert_true(battle.tree_rule.is_met(battle.board), "tree still alive")
+
+# --- H4A-1: deck-driven cards ---
+
+func test_level_deck_configures_available_cards() -> void:
+	# Deck ids come from level config; cost shown/spent comes from unit data.
+	var level := _empty_level(500)
+	level["deck"] = ["unit_a_1", "unit_b_1"]
+	assert_eq(level["deck"].size(), 2)
+	for unit_id in level["deck"]:
+		assert_false(repository.unit_def(String(unit_id)).is_empty(),
+				"deck unit '%s' must exist in units.json" % String(unit_id))
+
+func test_card_cost_matches_unit_definition_single_source() -> void:
+	# UI display cost must equal the definition cost that deploy() spends:
+	# change JSON cost and both sides follow without touching UI code.
+	for unit_id in ["unit_a_1", "unit_b_1"]:
+		var def := repository.unit_def(unit_id)
+		var card_cost := int(def.get("cost", 0))
+		var battle := BattleSession.new(repository, _empty_level(card_cost))
+		assert_true(battle.deploy(unit_id, Vector2i(0, 0))["ok"],
+				"deploy succeeds with exactly the definition cost")
+		assert_eq(battle.resources.amount, 0, "wallet drained by exactly cost")
+
+func test_deck_referencing_unknown_unit_is_caught_by_validator() -> void:
+	var level := _empty_level(500)
+	level["deck"] = ["unit_does_not_exist"]
+	var problems := LevelValidator.validate(level, repository.units, repository.enemies, repository.recipes)
+	assert_true(problems.any(func(p: String) -> bool: return p.contains("deck")),
+			"validator must flag unknown deck units")
+
+# --- H4A-2: fusion plan boundary ---
+
+func test_fusion_service_build_plan_for_upgrade() -> void:
+	var fusion := FusionService.new(repository)
+	var source := UnitState.from_definition(repository.unit_def("unit_a_1"))
+	var target := UnitState.from_definition(repository.unit_def("unit_a_1"))
+	source.health = 40
+	source.attack_cooldown = 0.7
+	target.shots_fired = 3
+	var plan := fusion.build_plan(source, target)
+	assert_true(plan["ok"])
+	assert_eq(String(plan["result_unit"]), "unit_a_2")
+	assert_eq(int(plan["resource_cost"]), 30)
+	assert_eq(String(plan["recipe_id"]), "upgrade_a_1_to_2")
+	var unit: UnitState = plan["unit"]
+	# Inheritance lives in the Fusion layer: worse health ratio, longer cooldown,
+	# summed shots.
+	assert_eq(int(unit.health), int(round(float(unit.max_health) * (40.0 / 80.0))))
+	assert_gte(unit.attack_cooldown, 0.7)
+	assert_eq(int(unit.shots_fired), 3)
+
+func test_fusion_service_build_plan_rejects_illegal_pair() -> void:
+	var fusion := FusionService.new(repository)
+	var b1 := UnitState.from_definition(repository.unit_def("unit_b_1"))
+	var b2 := UnitState.from_definition(repository.unit_def("unit_b_1"))
+	assert_true(fusion.build_plan(b1, b2).is_empty(), "B+B has no recipe: empty plan")
+	assert_true(fusion.can_fuse("unit_a_1", "unit_a_1"))
+	assert_false(fusion.can_fuse("unit_b_1", "unit_b_1"))
+
+func test_session_merge_still_works_through_plan_boundary() -> void:
+	# Behaviour compatibility: session-level results identical after the
+	# FusionService refactor.
+	var battle := BattleSession.new(repository, _empty_level(1000))
+	battle.deploy("unit_a_1", Vector2i(1, 0))
+	battle.deploy("unit_b_1", Vector2i(3, 0))
+	var result := battle.merge_cells(Vector2i(1, 0), Vector2i(3, 0), 1000)
+	assert_true(result["ok"])
+	assert_eq(String(result["result"]), "unit_ab")
+	assert_eq(String(result["kind"]), "fixed_cross_unit_fusion")
+	assert_eq(battle.board.unit_positions().size(), 1)
+
+# --- H4A-3: level/data reference validation ---
+
+func test_validator_accepts_current_shipped_data() -> void:
+	assert_true(LevelValidator.is_valid(repository.level, repository.units,
+			repository.enemies, repository.recipes),
+			"shipped level_playable.json + data files must validate clean")
+
+func test_validator_flags_bad_lanes_and_columns() -> void:
+	var level := _empty_level(500)
+	level["lanes"] = 6
+	level["columns"] = 0
+	var problems := LevelValidator.validate(level, repository.units, repository.enemies, repository.recipes)
+	assert_gt(problems.size(), 0)
+	assert_true(problems.any(func(p: String) -> bool: return p.contains("lanes")))
+	assert_true(problems.any(func(p: String) -> bool: return p.contains("columns")))
+
+func test_validator_flags_unknown_wave_enemy() -> void:
+	var level := _empty_level(500)
+	level["waves"] = [_wave("enemy_basic", 0), _wave("ghost_enemy", 1)]
+	var problems := LevelValidator.validate(level, repository.units, repository.enemies, repository.recipes)
+	assert_true(problems.any(func(p: String) -> bool: return p.contains("unknown enemy 'ghost_enemy'")))
+
+func test_validator_flags_out_of_range_wave_lane() -> void:
+	var level := _empty_level(500)
+	level["waves"] = [_wave("enemy_basic", 9)]
+	var problems := LevelValidator.validate(level, repository.units, repository.enemies, repository.recipes)
+	assert_true(problems.any(func(p: String) -> bool: return p.contains("lane 9 out of range")))
+
+func test_validator_flags_tree_outside_board() -> void:
+	var level := _empty_level(500)
+	level["protected_trees"] = [{"id":"t","lane":2,"column":50,"health":100}]
+	var problems := LevelValidator.validate(level, repository.units, repository.enemies, repository.recipes)
+	assert_true(problems.any(func(p: String) -> bool: return p.contains("outside the board")))
+
+func test_validator_flags_recipe_with_unknown_result() -> void:
+	var recipes := repository.recipes.duplicate(true)
+	recipes.append({"id":"bad","input_a":"unit_a_1","input_b":"unit_a_1","result":"unit_ghost","resource_cost":10})
+	var problems := LevelValidator.validate(_empty_level(500), repository.units, repository.enemies, recipes)
+	assert_true(problems.any(func(p: String) -> bool: return p.contains("unit_ghost")))
+
+func test_repository_load_all_fails_loud_on_invalid_level_file() -> void:
+	var bad_repo := GameDataRepository.new()
+	# A level file with an unknown wave enemy must make load_all() fail
+	# instead of booting a broken battle.
+	var tmp_path := "res://reports/test_bad_level.json"
+	if not DirAccess.dir_exists_absolute("res://reports"):
+		DirAccess.make_dir_recursive_absolute("res://reports")
+	var file := FileAccess.open(tmp_path, FileAccess.WRITE)
+	file.store_string(JSON.stringify({"id":"bad","lanes":5,"columns":9,"initial_resource":500,"minimum_protected_trees":0,"protected_trees":[],"waves":[{"at":1.0,"enemy":"no_such_enemy","lane":0}]}))
+	file.close()
+	# The push_error inside load_all is the EXPECTED fail-loud behaviour this
+	# test asserts on; silence GUT's error tracker for the call so the
+	# intentional push_error is not double-counted as an unexpected failure.
+	GutUtils.get_error_tracker().disabled = true
+	assert_false(bad_repo.load_all(tmp_path), "invalid level must fail loud")
+	GutUtils.get_error_tracker().disabled = false
+	DirAccess.remove_absolute(tmp_path)
+

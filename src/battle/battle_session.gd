@@ -61,27 +61,22 @@ func merge_cells(source: Vector2i, target: Vector2i, now_ms: int = -1) -> Dictio
 	var target_unit = board.cell_value(target)
 	if source_unit is not UnitState or target_unit is not UnitState:
 		return _reject("missing_unit")
-	var recipe := fusion.preview(source_unit.unit_id, target_unit.unit_id)
-	if recipe.is_empty():
+	# Fusion layer owns legality + plan construction (incl. state inheritance);
+	# the session only executes the battle transaction.
+	var plan := fusion.build_plan(source_unit, target_unit)
+	if plan.is_empty():
 		return _reject("illegal_recipe")
-	var cost := int(recipe.get("resource_cost", 0))
+	var cost := int(plan.get("resource_cost", 0))
 	if not resources.can_spend(cost):
 		return _reject("insufficient_resource")
-	var result_def := repository.unit_def(String(recipe.get("result", "")))
-	if result_def.is_empty():
-		return _reject("unknown_result")
-	var result := UnitState.from_definition(result_def)
-	var preserved_ratio := minf(source_unit.health_ratio(), target_unit.health_ratio())
-	result.health = maxi(1, int(round(float(result.max_health) * preserved_ratio)))
-	result.attack_cooldown = maxf(source_unit.attack_cooldown, target_unit.attack_cooldown)
-	result.shots_fired = source_unit.shots_fired + target_unit.shots_fired
+	var result: UnitState = plan["unit"]
 	var before_resource := resources.amount
 	board.remove_unit(source)
 	board.remove_unit(target)
 	board.place_unit(target, result)
 	resources.spend(cost)
 	var effective_now := Time.get_ticks_msec() if now_ms < 0 else now_ms
-	last_merge_receipt = {"ok": true,"recipe_id": recipe.get("id", ""),"kind": recipe.get("kind", ""),"result": result.unit_id,"source_cell": source,"target_cell": target,"resource_before": before_resource,"resource_after": resources.amount,"undo_deadline_ms": effective_now + UNDO_WINDOW_MS,"undo_implemented": false}
+	last_merge_receipt = {"ok": true,"recipe_id": plan.get("recipe_id", ""),"kind": plan.get("kind", ""),"result": String(plan.get("result_unit", "")),"source_cell": source,"target_cell": target,"resource_before": before_resource,"resource_after": resources.amount,"undo_deadline_ms": effective_now + UNDO_WINDOW_MS,"undo_implemented": false}
 	return last_merge_receipt.duplicate(true)
 
 func tick(delta: float) -> void:
@@ -177,9 +172,17 @@ func _tick_enemies(delta: float) -> void:
 # so a high move_speed (or a long frame) cannot tunnel past a unit or tree.
 # Budget is kept in DISTANCE cells: step_distance <= MAX_SUBSTEP_TRAVEL,
 # converted to seconds for advance() as step_distance / move_speed.
+#
+# H4A-4: the loop condition is on the raw remaining distance with a strict
+# float compare — no epsilon floor. The old `> 0.0001` check permanently
+# swallowed tiny per-frame movements (e.g. move_speed 0.001 at 60 fps gives
+# ~0.0000167 cells/frame), freezing slow enemies forever. move_speed <= 0
+# exits immediately: no division by zero, no infinite loop.
 func _substep_advance(enemy: EnemyState, delta: float) -> void:
+	if delta <= 0.0 or enemy.move_speed <= 0.0:
+		return
 	var remaining_distance := enemy.move_speed * delta
-	while remaining_distance > 0.0001 and not enemy.crossed_finish:
+	while remaining_distance > 0.0 and not enemy.crossed_finish:
 		var step_distance := minf(remaining_distance, MAX_SUBSTEP_TRAVEL)
 		remaining_distance -= step_distance
 		enemy.advance(step_distance / enemy.move_speed)
