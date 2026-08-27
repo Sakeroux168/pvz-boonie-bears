@@ -1,0 +1,23 @@
+{
+  "id": "world01_01",
+  "title": "1-1 有人来砍树！",
+  "briefing": "有人进森林砍树了，先把伐木小车挡住！",
+  "lanes": 5,
+  "columns": 9,
+  "initial_resource": 350,
+  "deck": ["unit_a_1"],
+  "minimum_protected_trees": 0,
+  "protected_trees": [],
+  "waves": [
+    {"at": 3.0, "enemy": "enemy_basic", "lane": 2},
+    {"at": 12.0, "enemy": "enemy_basic", "lane": 0},
+    {"at": 14.0, "enemy": "enemy_basic", "lane": 4},
+    {"at": 30.0, "enemy": "enemy_basic", "lane": 1},
+    {"at": 33.0, "enemy": "enemy_basic", "lane": 3},
+    {"at": 50.0, "enemy": "enemy_basic", "lane": 2},
+    {"at": 54.0, "enemy": "enemy_basic", "lane": 0},
+    {"at": 58.0, "enemy": "enemy_basic", "lane": 4},
+    {"at": 80.0, "enemy": "enemy_basic", "lane": 1, "speed_override": 0.5},
+    {"at": 84.0, "enemy": "enemy_basic", "lane": 3, "speed_override": 0.5}
+  ]
+}

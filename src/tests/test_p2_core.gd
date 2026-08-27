@@ -471,3 +471,137 @@ func test_repository_load_all_fails_loud_on_invalid_level_file() -> void:
 	GutUtils.get_error_tracker().disabled = false
 	DirAccess.remove_absolute(tmp_path)
 
+# --- H4B-0: numeric sanity validation ---
+
+func test_validator_flags_negative_start_column_override() -> void:
+	var level := _empty_level(500)
+	level["waves"] = [{"at": 1.0, "enemy": "enemy_basic", "lane": 0, "start_column_override": -1.5}]
+	var problems := LevelValidator.validate(level, repository.units, repository.enemies, repository.recipes)
+	assert_true(problems.any(func(p: String) -> bool: return p.contains("start_column_override")),
+			"negative start_column_override must fail loud")
+
+func test_validator_allows_positive_onboard_start_column() -> void:
+	# Positive on-board spawns stay legal: only negatives are rejected.
+	var level := _empty_level(500)
+	level["waves"] = [{"at": 1.0, "enemy": "enemy_basic", "lane": 0, "start_column_override": 3.0}]
+	assert_true(LevelValidator.is_valid(level, repository.units, repository.enemies, repository.recipes),
+			"positive in-board spawn override is legal config")
+
+func test_validator_flags_bad_wave_time_and_overrides() -> void:
+	var level := _empty_level(500)
+	level["waves"] = [
+		{"at": -2.0, "enemy": "enemy_basic", "lane": 0},
+		{"at": 5.0, "enemy": "enemy_basic", "lane": 0, "health_override": 0, "speed_override": -1.0, "attack_damage_override": -3},
+	]
+	var problems := LevelValidator.validate(level, repository.units, repository.enemies, repository.recipes)
+	assert_true(problems.any(func(p: String) -> bool: return p.contains("time must be >= 0")))
+	assert_true(problems.any(func(p: String) -> bool: return p.contains("health_override must be > 0")))
+	assert_true(problems.any(func(p: String) -> bool: return p.contains("speed_override must be >= 0")))
+	assert_true(problems.any(func(p: String) -> bool: return p.contains("attack_damage_override must be >= 0")))
+
+func test_validator_flags_negative_initial_resource() -> void:
+	var level := _empty_level(-10)
+	var problems := LevelValidator.validate(level, repository.units, repository.enemies, repository.recipes)
+	assert_true(problems.any(func(p: String) -> bool: return p.contains("initial_resource")))
+
+func test_validator_flags_bad_unit_numbers() -> void:
+	var units := repository.units.duplicate(true)
+	units["unit_a_1"]["cost"] = -5
+	units["unit_b_1"]["max_health"] = 0
+	var problems := LevelValidator.validate(_empty_level(500), units, repository.enemies, repository.recipes)
+	assert_true(problems.any(func(p: String) -> bool: return p.contains("'unit_a_1' cost must be >= 0")))
+	assert_true(problems.any(func(p: String) -> bool: return p.contains("'unit_b_1' max_health must be > 0")))
+
+func test_validator_flags_bad_enemy_numbers() -> void:
+	var enemies := repository.enemies.duplicate(true)
+	enemies["enemy_basic"]["max_health"] = -1
+	enemies["enemy_basic"]["move_speed"] = -0.5
+	enemies["enemy_basic"]["attack_damage"] = -2
+	enemies["enemy_tree_targeter"]["attack_period"] = 0.0
+	var problems := LevelValidator.validate(_empty_level(500), repository.units, enemies, repository.recipes)
+	assert_true(problems.any(func(p: String) -> bool: return p.contains("'enemy_basic' max_health must be > 0")))
+	assert_true(problems.any(func(p: String) -> bool: return p.contains("'enemy_basic' move_speed must be >= 0")))
+	assert_true(problems.any(func(p: String) -> bool: return p.contains("'enemy_basic' attack_damage must be >= 0")))
+	assert_true(problems.any(func(p: String) -> bool: return p.contains("'enemy_tree_targeter' attack_period must be > 0")))
+
+func test_validator_flags_negative_recipe_cost() -> void:
+	var recipes := repository.recipes.duplicate(true)
+	recipes[0]["resource_cost"] = -30
+	var problems := LevelValidator.validate(_empty_level(500), repository.units, repository.enemies, recipes)
+	assert_true(problems.any(func(p: String) -> bool: return p.contains("resource_cost must be >= 0")))
+
+# --- H4B: formal World 01 level 1-1 ---
+
+const WORLD01_01_PATH := "res://src/data/levels/world01_01.json"
+
+func _load_world01_repo() -> GameDataRepository:
+	var repo := GameDataRepository.new()
+	assert_true(repo.load_all(WORLD01_01_PATH))
+	return repo
+
+func test_world01_01_passes_validator_and_loads() -> void:
+	var repo := _load_world01_repo()
+	assert_eq(String(repo.level.get("id")), "world01_01")
+	assert_eq(String(repo.level.get("title")), "1-1 有人来砍树！")
+
+func test_world01_01_deck_only_has_xiong_da_1() -> void:
+	var repo := _load_world01_repo()
+	var deck: Array = repo.level.get("deck", [])
+	assert_eq(deck.size(), 1, "level 1-1 teaches only 熊大 I")
+	assert_eq(String(deck[0]), "unit_a_1")
+
+func test_world01_01_waves_only_use_basic_enemy() -> void:
+	var repo := _load_world01_repo()
+	for wave in repo.level.get("waves", []):
+		assert_eq(String(wave.get("enemy")), "enemy_basic",
+				"1-1 must only use 木料小推车 (enemy_basic)")
+
+func test_world01_01_no_protected_tree_objective() -> void:
+	var repo := _load_world01_repo()
+	assert_eq(int(repo.level.get("minimum_protected_trees")), 0,
+			"1-1 does not teach the tree objective yet")
+	assert_eq((repo.level.get("protected_trees", []) as Array).size(), 0)
+
+func test_world01_01_formal_display_names_exist() -> void:
+	var repo := _load_world01_repo()
+	assert_eq(String(repo.unit_def("unit_a_1").get("display_name")), "熊大 I")
+	assert_eq(String(repo.unit_def("unit_a_1").get("character_key")), "xiong_da")
+	assert_eq(String(repo.enemy_def("enemy_basic").get("display_name")), "木料小推车")
+
+func test_world01_01_simulates_to_victory_with_redeployed_xiong_da() -> void:
+	# Tutorial tuning claim: 3~5 熊大 I win. This drives the real runtime
+	# path — full BattleSession ticks. Player opens with 3 units on the early
+	# lanes, then spends wave income to reinforce lanes 1/3 as later waves
+	# arrive (350 starting resource = exactly this plan).
+	var repo := _load_world01_repo()
+	var battle := BattleSession.new(repo)
+	battle.deploy("unit_a_1", Vector2i(3, 2))
+	battle.deploy("unit_a_1", Vector2i(3, 0))
+	battle.deploy("unit_a_1", Vector2i(3, 4))
+	var reinforced := {1: false, 3: false}
+	for _i in range(5000):
+		battle.tick(0.05)
+		if battle.state != BattleSession.STATE_RUNNING:
+			break
+		if battle.state == BattleSession.STATE_RUNNING:
+			if not reinforced[1] and battle.elapsed >= 20.0 and battle.resources.amount >= 50:
+				assert_true(battle.deploy("unit_a_1", Vector2i(3, 1))["ok"])
+				reinforced[1] = true
+			elif not reinforced[3] and battle.elapsed >= 30.0 and battle.resources.amount >= 50:
+				assert_true(battle.deploy("unit_a_1", Vector2i(3, 3))["ok"])
+				reinforced[3] = true
+	assert_eq(battle.state, BattleSession.STATE_VICTORY,
+			"open 3 lanes then reinforce with wave income should clear 1-1")
+
+func test_world01_01_abandoning_lanes_reaches_failure() -> void:
+	# Ignore two of the attacked lanes entirely: skipping defenses must be
+	# able to lose (tutorial states that ignoring routes fails).
+	var repo := _load_world01_repo()
+	var battle := BattleSession.new(repo)
+	for _i in range(4000):
+		battle.tick(0.05)
+		if battle.state != BattleSession.STATE_RUNNING:
+			break
+	assert_eq(battle.state, BattleSession.STATE_FAILURE,
+			"a completely undefended board must lose 1-1")
+

@@ -1,6 +1,7 @@
 {
   "enemy_basic": {
     "id": "enemy_basic",
+    "display_name": "木料小推车",
     "move_speed": 0.42,
     "max_health": 65,
     "attack_damage": 10,
@@ -9,6 +10,7 @@
   },
   "enemy_tree_targeter": {
     "id": "enemy_tree_targeter",
+    "display_name": "伐木标记车",
     "move_speed": 0.34,
     "max_health": 90,
     "attack_damage": 14,
