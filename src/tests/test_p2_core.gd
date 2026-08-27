@@ -570,9 +570,10 @@ func test_world01_01_formal_display_names_exist() -> void:
 
 func test_world01_01_simulates_to_victory_with_redeployed_xiong_da() -> void:
 	# Tutorial tuning claim: 3~5 熊大 I win. This drives the real runtime
-	# path — full BattleSession ticks. Player opens with 3 units on the early
-	# lanes, then spends wave income to reinforce lanes 1/3 as later waves
-	# arrive (350 starting resource = exactly this plan).
+	# path — full BattleSession ticks. 350 starting resource funds the whole
+	# plan up front (7 x cost 50): open with 3 on the early lanes, then
+	# reinforce lanes 1/3 from the remaining pool before their waves arrive.
+	# (BattleSession has no kill/wave income yet — no income is claimed here.)
 	var repo := _load_world01_repo()
 	var battle := BattleSession.new(repo)
 	battle.deploy("unit_a_1", Vector2i(3, 2))
@@ -604,4 +605,54 @@ func test_world01_01_abandoning_lanes_reaches_failure() -> void:
 			break
 	assert_eq(battle.state, BattleSession.STATE_FAILURE,
 			"a completely undefended board must lose 1-1")
+
+# --- GPT review on PR #8: level recipe gate ---
+
+func test_world01_01_rejects_upgrade_merge() -> void:
+	# P1 blocker: 1-1 teaches only base tower defense; A1+A1->A2 must be
+	# rejected at runtime and both units plus resources must be untouched.
+	var repo := _load_world01_repo()
+	var battle := BattleSession.new(repo)
+	assert_true(battle.deploy("unit_a_1", Vector2i(1, 0))["ok"])
+	assert_true(battle.deploy("unit_a_1", Vector2i(3, 0))["ok"])
+	var before_resource := battle.resources.amount
+	var result := battle.merge_cells(Vector2i(1, 0), Vector2i(3, 0), 1000)
+	assert_false(result["ok"], "1-1 must reject upgrade fusion")
+	assert_eq(String(result["reason"]), "recipe_disabled_in_level")
+	assert_true(battle.board.cell_value(Vector2i(1, 0)) is UnitState, "source unit still on board")
+	assert_true(battle.board.cell_value(Vector2i(3, 0)) is UnitState, "target unit still on board")
+	assert_eq(battle.resources.amount, before_resource, "no resource charged on rejected merge")
+
+func test_world01_01_fusion_preview_respects_gate() -> void:
+	var repo := _load_world01_repo()
+	var battle := BattleSession.new(repo)
+	battle.deploy("unit_a_1", Vector2i(1, 0))
+	battle.deploy("unit_a_1", Vector2i(3, 0))
+	assert_true(battle.fusion_preview(Vector2i(1, 0), Vector2i(3, 0)).is_empty(),
+			"drag preview must not advertise a disabled recipe")
+
+func test_recipe_gate_absent_key_keeps_allow_all_behaviour() -> void:
+	# Legacy fixture (level_playable.json / _empty_level) has no
+	# enabled_recipe_ids: upgrades/fusion keep working there.
+	var battle := BattleSession.new(repository, _empty_level(1000))
+	battle.deploy("unit_a_1", Vector2i(1, 0))
+	battle.deploy("unit_a_1", Vector2i(3, 0))
+	var result := battle.merge_cells(Vector2i(1, 0), Vector2i(3, 0), 1000)
+	assert_true(result["ok"], "levels without the gate keep legacy behaviour")
+
+func test_level_with_enabled_recipes_allows_listed_only() -> void:
+	# Gate semantics: listed recipes work; unlisted ones are rejected even
+	# though they exist globally.
+	var level := _empty_level(2000)
+	level["enabled_recipe_ids"] = ["upgrade_a_1_to_2"]
+	var battle := BattleSession.new(repository, level)
+	battle.deploy("unit_a_1", Vector2i(1, 2))
+	battle.deploy("unit_b_1", Vector2i(5, 2))
+	var blocked := battle.merge_cells(Vector2i(1, 2), Vector2i(5, 2))
+	assert_false(blocked["ok"], "unlisted cross-fusion must be blocked when gate lists only upgrades")
+	assert_eq(String(blocked["reason"]), "recipe_disabled_in_level")
+	battle.deploy("unit_a_1", Vector2i(1, 4))
+	battle.deploy("unit_a_1", Vector2i(3, 4))
+	var allowed := battle.merge_cells(Vector2i(1, 4), Vector2i(3, 4))
+	assert_true(allowed["ok"], "listed upgrade recipe stays legal")
 

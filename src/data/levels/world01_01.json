@@ -5,8 +5,9 @@
   "lanes": 5,
   "columns": 9,
   "initial_resource": 350,
-  "deck": ["unit_a_1"],
-  "minimum_protected_trees": 0,
+  "deck":["unit_a_1"],
+  "enabled_recipe_ids":[],
+  "minimum_protected_trees":0,
   "protected_trees": [],
   "waves": [
     {"at": 3.0, "enemy": "enemy_basic", "lane": 2},

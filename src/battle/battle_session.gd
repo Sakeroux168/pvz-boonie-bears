@@ -16,6 +16,12 @@ var board: BoardState
 var resources: ResourcePool
 var fusion: FusionService
 var tree_rule: ProtectedTreeRule
+# Level-scoped recipe gate (GPT review on PR #8): recipes not in this list are
+# illegal in this level. Missing/empty field means "no recipes enabled" only if
+# the key exists; absent key keeps the legacy allow-all behaviour so the old
+# level_playable.json regression fixture still teaches upgrades/fusion.
+var enabled_recipe_ids: Dictionary = {}
+var recipe_gate_active := false
 var enemies: Array[EnemyState] = []
 var level: Dictionary = {}
 var state := STATE_RUNNING
@@ -26,6 +32,10 @@ var last_merge_receipt: Dictionary = {}
 func _init(p_repository: GameDataRepository, level_override: Dictionary = {}) -> void:
 	repository = p_repository
 	level = level_override.duplicate(true) if not level_override.is_empty() else repository.level.duplicate(true)
+	if level.has("enabled_recipe_ids"):
+		recipe_gate_active = true
+		for rid in level["enabled_recipe_ids"]:
+			enabled_recipe_ids[String(rid)] = true
 	board = BoardState.new(int(level.get("lanes", 5)), int(level.get("columns", 9)))
 	resources = ResourcePool.new(int(level.get("initial_resource", 450)))
 	fusion = FusionService.new(repository)
@@ -66,6 +76,11 @@ func merge_cells(source: Vector2i, target: Vector2i, now_ms: int = -1) -> Dictio
 	var plan := fusion.build_plan(source_unit, target_unit)
 	if plan.is_empty():
 		return _reject("illegal_recipe")
+	# Level-scoped recipe gate (GPT review on PR #8): a level with
+	# enabled_recipe_ids only allows the listed recipes, so tutorial levels can
+	# keep upgrades/fusion locked until their teaching level.
+	if recipe_gate_active and not enabled_recipe_ids.has(String(plan.get("recipe_id", ""))):
+		return _reject("recipe_disabled_in_level")
 	var cost := int(plan.get("resource_cost", 0))
 	if not resources.can_spend(cost):
 		return _reject("insufficient_resource")
@@ -241,7 +256,14 @@ func fusion_preview(source: Vector2i, target: Vector2i) -> Dictionary:
 	var b = board.cell_value(target)
 	if a is not UnitState or b is not UnitState:
 		return {}
-	return fusion.preview(a.unit_id, b.unit_id)
+	var recipe := fusion.preview(a.unit_id, b.unit_id)
+	if recipe.is_empty():
+		return {}
+	# Respect the level recipe gate so the drag-preview highlight matches what
+	# merge_cells would actually allow.
+	if recipe_gate_active and not enabled_recipe_ids.has(String(recipe.get("id", ""))):
+		return {}
+	return recipe
 
 func _reject(reason: String) -> Dictionary:
 	return {"ok": false, "reason": reason}

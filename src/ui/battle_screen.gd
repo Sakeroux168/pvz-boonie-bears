@@ -221,9 +221,22 @@ func _draw_cards(font: Font) -> void:
 		draw_string(font, rect.position + Vector2(20, 42),
 				"%s  cost %d" % [_display_name_for_unit(String(card["unit_id"])), int(card["cost"])],
 				HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color.WHITE)
-	draw_string(font, Vector2(1060, 385), "A1+A1 -> A2", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.8, 0.9, 0.95))
-	draw_string(font, Vector2(1060, 410), "A2+A2 -> A3", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.8, 0.9, 0.95))
-	draw_string(font, Vector2(1060, 435), "A1+B1 -> AB", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.8, 0.9, 0.95))
+	draw_string(font, Vector2(1060, 385), "FUSIONS", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color.WHITE)
+	# Recipe hints are data-driven and level-gated: only recipes enabled by the
+	# current level's enabled_recipe_ids are shown (GPT review on PR #8).
+	var shown := 0
+	for recipe in repository.recipes:
+		var recipe_id := String(recipe.get("id", ""))
+		if session.recipe_gate_active and not session.enabled_recipe_ids.has(recipe_id):
+			continue
+		draw_string(font, Vector2(1060, 410 + shown * 25),
+				"%s + %s -> %s" % [_display_name_for_unit(String(recipe.get("input_a", ""))),
+						_display_name_for_unit(String(recipe.get("input_b", ""))),
+						_display_name_for_unit(String(recipe.get("result", "")))],
+				HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.8, 0.9, 0.95))
+		shown += 1
+	if shown == 0:
+		draw_string(font, Vector2(1060, 410), "本关未解锁合成", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.5, 0.55, 0.6))
 
 func _draw_status(font: Font) -> void:
 	draw_string(font, Vector2(40, 642), status_text, HORIZONTAL_ALIGNMENT_LEFT, 930, 16, Color(0.78, 0.86, 0.92))
