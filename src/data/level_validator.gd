@@ -13,9 +13,12 @@ static func validate(level: Dictionary, units: Dictionary,
 		enemies: Dictionary, recipes: Array) -> Array[String]:
 	var problems: Array[String] = []
 	_validate_grid(level, problems)
+	_validate_resources(level, problems)
 	_validate_trees(level, problems)
 	_validate_waves(level, enemies, problems)
 	_validate_deck(level, units, problems)
+	_validate_units(units, problems)
+	_validate_enemies(enemies, problems)
 	_validate_recipes(units, recipes, problems)
 	return problems
 
@@ -58,6 +61,11 @@ static func _validate_trees(level: Dictionary, problems: Array[String]) -> void:
 		problems.append("minimum_protected_trees exceeds the number of distinct tree cells (%d)" % seen_cells.size())
 
 
+static func _validate_resources(level: Dictionary, problems: Array[String]) -> void:
+	if int(level.get("initial_resource", -1)) < 0:
+		problems.append("initial_resource must be >= 0 (got %s)" % str(level.get("initial_resource")))
+
+
 static func _validate_waves(level: Dictionary, enemies: Dictionary,
 		problems: Array[String]) -> void:
 	var lanes := int(level.get("lanes", 0))
@@ -71,9 +79,53 @@ static func _validate_waves(level: Dictionary, enemies: Dictionary,
 		if lane < 0 or lane >= lanes:
 			problems.append("wave %d lane %d out of range (0..%d)" % [index, lane, lanes - 1])
 		var at := float(wave.get("at", 0.0))
+		# H4B-0: wave times must be non-negative.
+		if at < 0.0:
+			problems.append("wave %d time must be >= 0 (got %.2f)" % [index, at])
 		if at < last_at:
 			problems.append("wave %d time %.2f earlier than previous wave %.2f" % [index, at, last_at])
 		last_at = at
+		# H4B-0: numeric override sanity. A negative start_column_override
+		# spawns the enemy past the finish line, instantly triggering
+		# insurance/failure — fail loud here instead. Positive on-board spawns
+		# stay legal (may become a legitimate level design later); only
+		# negatives are rejected.
+		if wave.has("start_column_override") and float(wave["start_column_override"]) < 0.0:
+			problems.append("wave %d start_column_override must be >= 0 (got %s)"
+					% [index, str(wave["start_column_override"])])
+		if wave.has("health_override") and int(wave["health_override"]) <= 0:
+			problems.append("wave %d health_override must be > 0 (got %s)"
+					% [index, str(wave["health_override"])])
+		if wave.has("speed_override") and float(wave["speed_override"]) < 0.0:
+			problems.append("wave %d speed_override must be >= 0 (got %s)"
+					% [index, str(wave["speed_override"])])
+		if wave.has("attack_damage_override") and int(wave["attack_damage_override"]) < 0:
+			problems.append("wave %d attack_damage_override must be >= 0 (got %s)"
+					% [index, str(wave["attack_damage_override"])])
+
+
+# H4B-0: numeric sanity for unit/enemy/recipe definitions so a typo'd data
+# file fails at load instead of producing unkillable enemies or free deploys.
+static func _validate_units(units: Dictionary, problems: Array[String]) -> void:
+	for unit_id in units:
+		var def: Dictionary = units[unit_id]
+		if int(def.get("cost", 0)) < 0:
+			problems.append("unit '%s' cost must be >= 0 (got %s)" % [unit_id, str(def.get("cost"))])
+		if int(def.get("max_health", 0)) <= 0:
+			problems.append("unit '%s' max_health must be > 0 (got %s)" % [unit_id, str(def.get("max_health"))])
+
+
+static func _validate_enemies(enemies: Dictionary, problems: Array[String]) -> void:
+	for enemy_id in enemies:
+		var def: Dictionary = enemies[enemy_id]
+		if int(def.get("max_health", 0)) <= 0:
+			problems.append("enemy '%s' max_health must be > 0 (got %s)" % [enemy_id, str(def.get("max_health"))])
+		if float(def.get("move_speed", 0)) < 0.0:
+			problems.append("enemy '%s' move_speed must be >= 0 (got %s)" % [enemy_id, str(def.get("move_speed"))])
+		if int(def.get("attack_damage", 0)) < 0:
+			problems.append("enemy '%s' attack_damage must be >= 0 (got %s)" % [enemy_id, str(def.get("attack_damage"))])
+		if float(def.get("attack_period", 0)) <= 0.0:
+			problems.append("enemy '%s' attack_period must be > 0 (got %s)" % [enemy_id, str(def.get("attack_period"))])
 
 
 static func _validate_deck(level: Dictionary, units: Dictionary,
@@ -93,3 +145,6 @@ static func _validate_recipes(units: Dictionary, recipes: Array,
 			if not units.has(unit_id):
 				problems.append("recipe %d ('%s') %s references unknown unit '%s'"
 						% [index, String(recipe.get("id", "")), key, unit_id])
+		if int(recipe.get("resource_cost", 0)) < 0:
+			problems.append("recipe %d ('%s') resource_cost must be >= 0 (got %s)"
+					% [index, String(recipe.get("id", "")), str(recipe.get("resource_cost"))])

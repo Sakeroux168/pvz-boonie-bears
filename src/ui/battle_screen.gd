@@ -15,14 +15,23 @@ var drag_payload: Dictionary = {}
 var pointer_position := Vector2.ZERO
 var hover_cell := Vector2i(-1, -1)
 var status_text := "Drag cards to deploy. Drag a unit onto another to merge."
+# Formal content identity (H4B): level title/briefing and unit display names
+# come from data; internal ids stay internal.
+var level_title := ""
+var level_briefing := ""
 # Deck entries: [{"unit_id": String, "rect": Rect2, "cost": int}] — built once
 # from level.deck + repository unit definitions (single source of truth for cost).
 var deck_cards: Array[Dictionary] = []
 
 func _ready() -> void:
-	if not repository.load_all():
-		push_error("P2 data failed to load")
+	# H4B: the game boots into the formal World 01 level 1-1. The old
+	# level_playable.json stays as a dev/regression fixture, still loadable
+	# via BattleSession tests or by passing a path here.
+	if not repository.load_all("res://src/data/levels/world01_01.json"):
+		push_error("World01 level 1-1 failed to load")
 		return
+	level_title = String(repository.level.get("title", "World 01"))
+	level_briefing = String(repository.level.get("briefing", ""))
 	_build_deck_cards()
 	session = BattleSession.new(repository)
 	queue_redraw()
@@ -51,6 +60,16 @@ func _card_at(point: Vector2) -> Dictionary:
 			return card
 	return {}
 
+# Content identity: prefer the formal display_name from data; fall back to
+# the internal id only when metadata is missing (e.g. dev fixtures).
+func _display_name_for_unit(unit_id: String) -> String:
+	var def := repository.unit_def(unit_id)
+	return String(def.get("display_name", unit_id)) if not def.is_empty() else unit_id
+
+func _display_name_for_enemy(enemy_id: String) -> String:
+	var def := repository.enemy_def(enemy_id)
+	return String(def.get("display_name", enemy_id)) if not def.is_empty() else enemy_id
+
 func _process(delta: float) -> void:
 	if session == null:
 		return
@@ -65,12 +84,24 @@ func _unhandled_input(event: InputEvent) -> void:
 	hover_cell = _cell_from_point(pointer_position)
 	match pointer["type"]:
 		"down":
+			# Restart button is only visible/clickable once the battle ended.
+			if session != null and session.state != BattleSession.STATE_RUNNING \
+					and RESTART_RECT.has_point(pointer_position):
+				_restart_level()
+				queue_redraw()
+				return
 			_begin_drag(pointer_position)
 		"move":
 			pass
 		"up":
 			_finish_drag(pointer_position)
 	queue_redraw()
+
+func _restart_level() -> void:
+	status_text = "Level restarted."
+	drag_payload = {}
+	hover_cell = Vector2i(-1, -1)
+	session = BattleSession.new(repository)
 
 func _begin_drag(point: Vector2) -> void:
 	if session == null or session.state != BattleSession.STATE_RUNNING:
@@ -117,8 +148,10 @@ func _draw() -> void:
 	if session == null:
 		return
 	var font := ThemeDB.fallback_font
-	draw_string(font, Vector2(40, 45), "P2 PLAYABLE PROTOTYPE", HORIZONTAL_ALIGNMENT_LEFT, -1, 26, Color.WHITE)
+	draw_string(font, Vector2(40, 45), level_title, HORIZONTAL_ALIGNMENT_LEFT, -1, 26, Color.WHITE)
 	draw_string(font, Vector2(40, 74), "5 lanes | %d columns | resource %d" % [session.board.columns, session.resources.amount], HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(0.75, 0.85, 0.93))
+	if not level_briefing.is_empty():
+		draw_string(font, Vector2(620, 74), level_briefing, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(0.95, 0.85, 0.6))
 	_draw_board(font)
 	_draw_cards(font)
 	_draw_status(font)
@@ -163,7 +196,7 @@ func _draw_unit(center: Vector2, unit_id: String, font: Font) -> void:
 	else:
 		draw_circle(center - Vector2(13, 0), 23.0, Color(0.2, 0.75, 1.0))
 		draw_rect(Rect2(center + Vector2(-2, -23), Vector2(46, 46)), Color(1.0, 0.62, 0.22), true)
-	draw_string(font, center + Vector2(-45, 42), unit_id, HORIZONTAL_ALIGNMENT_CENTER, 90, 13, Color.WHITE)
+	draw_string(font, center + Vector2(-45, 42), _display_name_for_unit(unit_id), HORIZONTAL_ALIGNMENT_CENTER, 90, 13, Color.WHITE)
 
 func _draw_tree(center: Vector2, tree: Dictionary, font: Font) -> void:
 	var color := Color(0.58, 0.36, 0.16) if tree.get("alive", false) else Color(0.24, 0.21, 0.19)
@@ -175,7 +208,7 @@ func _draw_enemy(center: Vector2, enemy: EnemyState, font: Font) -> void:
 	var color := Color(0.78, 0.28, 0.85) if enemy.prefers_tree else Color(1.0, 0.25, 0.32)
 	var points := PackedVector2Array([center + Vector2(-26, -23), center + Vector2(28, 0), center + Vector2(-26, 23)])
 	draw_colored_polygon(points, color)
-	draw_string(font, center + Vector2(-42, 43), "%s %d" % [enemy.enemy_id, enemy.health], HORIZONTAL_ALIGNMENT_CENTER, 100, 11, Color.WHITE)
+	draw_string(font, center + Vector2(-42, 43), "%s %d" % [_display_name_for_enemy(enemy.enemy_id), enemy.health], HORIZONTAL_ALIGNMENT_CENTER, 100, 11, Color.WHITE)
 
 func _draw_cards(font: Font) -> void:
 	draw_string(font, Vector2(1060, 125), "CARDS", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color.WHITE)
@@ -184,13 +217,26 @@ func _draw_cards(font: Font) -> void:
 		var rect: Rect2 = card["rect"]
 		draw_rect(rect, CARD_COLORS[index % CARD_COLORS.size()], true)
 		# Cost shown on the card comes from the same unit definition the
-		# Battle Session spends against.
+		# Battle Session spends against; the label is the formal display name.
 		draw_string(font, rect.position + Vector2(20, 42),
-				"%s  cost %d" % [card["unit_id"], int(card["cost"])],
+				"%s  cost %d" % [_display_name_for_unit(String(card["unit_id"])), int(card["cost"])],
 				HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color.WHITE)
-	draw_string(font, Vector2(1060, 385), "A1+A1 -> A2", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.8, 0.9, 0.95))
-	draw_string(font, Vector2(1060, 410), "A2+A2 -> A3", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.8, 0.9, 0.95))
-	draw_string(font, Vector2(1060, 435), "A1+B1 -> AB", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.8, 0.9, 0.95))
+	draw_string(font, Vector2(1060, 385), "FUSIONS", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color.WHITE)
+	# Recipe hints are data-driven and level-gated: only recipes enabled by the
+	# current level's enabled_recipe_ids are shown (GPT review on PR #8).
+	var shown := 0
+	for recipe in repository.recipes:
+		var recipe_id := String(recipe.get("id", ""))
+		if session.recipe_gate_active and not session.enabled_recipe_ids.has(recipe_id):
+			continue
+		draw_string(font, Vector2(1060, 410 + shown * 25),
+				"%s + %s -> %s" % [_display_name_for_unit(String(recipe.get("input_a", ""))),
+						_display_name_for_unit(String(recipe.get("input_b", ""))),
+						_display_name_for_unit(String(recipe.get("result", "")))],
+				HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.8, 0.9, 0.95))
+		shown += 1
+	if shown == 0:
+		draw_string(font, Vector2(1060, 410), "本关未解锁合成", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.5, 0.55, 0.6))
 
 func _draw_status(font: Font) -> void:
 	draw_string(font, Vector2(40, 642), status_text, HORIZONTAL_ALIGNMENT_LEFT, 930, 16, Color(0.78, 0.86, 0.92))
@@ -199,6 +245,16 @@ func _draw_status(font: Font) -> void:
 		var text := "VICTORY" if session.state == BattleSession.STATE_VICTORY else "FAILURE"
 		draw_rect(Rect2(330, 270, 620, 130), Color(0.03, 0.05, 0.07, 0.92), true)
 		draw_string(font, Vector2(560, 345), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 34, Color.WHITE)
+		# Restart button (or press R).
+		draw_rect(RESTART_RECT, Color(0.15, 0.45, 0.25), true)
+		draw_string(font, RESTART_RECT.position + Vector2(30, 30), "再来一局 (R)", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color.WHITE)
+
+const RESTART_RECT := Rect2(575.0, 365.0, 130.0, 40.0)
+
+func _unhandled_key_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and event.keycode == KEY_R \
+			and session != null and session.state != BattleSession.STATE_RUNNING:
+		_restart_level()
 
 func _draw_drag_preview(font: Font) -> void:
 	var unit_id := String(drag_payload.get("unit_id", ""))
