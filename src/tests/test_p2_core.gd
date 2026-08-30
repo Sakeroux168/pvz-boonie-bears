@@ -901,3 +901,157 @@ func test_battle_screen_status_hides_fusion_hint_when_all_recipes_locked() -> vo
 	assert_eq(screen.status_text, "Drag cards to deploy.")
 	screen.free()
 
+
+
+# --- H4B-DEV: wave HUD and debug resource tools ---
+
+func _dev_test_screen():
+	var screen_script = load("res://src/ui/battle_screen.gd")
+	return screen_script.new()
+
+func _mouse_input(screen, position: Vector2, pressed: bool) -> void:
+	var event := InputEventMouseButton.new()
+	event.button_index = MOUSE_BUTTON_LEFT
+	event.pressed = pressed
+	event.position = position
+	screen._unhandled_input(event)
+
+func _click_screen(screen, position: Vector2) -> void:
+	_mouse_input(screen, position, true)
+
+func _drag_card_to_cell(screen, card_index: int, cell: Vector2i) -> void:
+	var card_rect: Rect2 = screen.deck_cards[card_index]["rect"]
+	_mouse_input(screen, card_rect.get_center(), true)
+	_mouse_input(screen, screen._cell_rect(cell).get_center(), false)
+
+func _drag_unit_to_cell(screen, source: Vector2i, target: Vector2i) -> void:
+	_mouse_input(screen, screen._cell_rect(source).get_center(), true)
+	_mouse_input(screen, screen._cell_rect(target).get_center(), false)
+
+func _prepare_dev_screen(screen) -> bool:
+	screen.dev_tools_enabled = true
+	if not OS.is_debug_build():
+		assert_false(screen._dev_tools_available(), "release builds must keep DEV controls unavailable")
+		return false
+	assert_true(screen._dev_tools_available())
+	return true
+
+func test_battle_screen_wave_hud_uses_real_progress_and_clamped_countdown() -> void:
+	var screen = _dev_test_screen()
+	screen.repository = repository
+	var level := _empty_level(500)
+	level["waves"] = [
+		{"at": 2.0, "enemy": "enemy_basic", "lane": 0, "speed_override": 0.0},
+		{"at": 5.0, "enemy": "enemy_basic", "lane": 1, "speed_override": 0.0},
+	]
+	screen.session = BattleSession.new(repository, level)
+	assert_eq(screen._wave_total(), 2)
+	assert_eq(screen._wave_progress_text(), "波次 0 / 2")
+	assert_almost_eq(screen._next_wave_seconds(), 2.0, 0.0001)
+	assert_eq(screen._next_wave_text(), "下一波：2.0s")
+	screen.session.tick(1.25)
+	assert_eq(screen._wave_progress_text(), "波次 0 / 2")
+	assert_almost_eq(screen._next_wave_seconds(), 0.75, 0.0001)
+	screen.session.tick(0.75)
+	assert_eq(screen.session.next_wave_index, 1)
+	assert_eq(screen._wave_progress_text(), "波次 1 / 2")
+	assert_almost_eq(screen._next_wave_seconds(), 3.0, 0.0001)
+	screen.session.state = BattleSession.STATE_FAILURE
+	screen.session.elapsed = 10.0
+	assert_eq(screen._next_wave_seconds(), 0.0)
+	assert_eq(screen._next_wave_text(), "下一波：0.0s")
+	screen.session.state = BattleSession.STATE_RUNNING
+	screen.session.elapsed = 5.0
+	screen.session.tick(0.0)
+	assert_eq(screen.session.next_wave_index, 2)
+	assert_eq(screen._wave_progress_text(), "波次 2 / 2")
+	assert_eq(screen._next_wave_text(), "全部波次已出")
+	screen.free()
+
+func test_dev_controls_are_gated_by_debug_build() -> void:
+	var screen = _dev_test_screen()
+	screen.dev_tools_enabled = true
+	assert_eq(screen._dev_tools_available(), OS.is_debug_build())
+	screen.dev_tools_enabled = false
+	assert_false(screen._dev_tools_available())
+	screen.free()
+
+func test_dev_plus_500_button_is_real_click_and_exact() -> void:
+	var screen = _dev_test_screen()
+	assert_true(screen._load_level_by_id("world01_01"))
+	if not _prepare_dev_screen(screen):
+		screen.free()
+		return
+	var before: int = screen.session.resources.amount
+	_click_screen(screen, screen.DEV_RESOURCE_RECT.get_center())
+	assert_eq(screen.session.resources.amount, before + 500)
+	screen.free()
+
+func test_dev_infinite_resources_refunds_deploy_and_off_restores_cost() -> void:
+	var screen = _dev_test_screen()
+	assert_true(screen._load_level_by_id("world01_01"))
+	if not _prepare_dev_screen(screen):
+		screen.free()
+		return
+	var initial: int = screen.session.resources.amount
+	_drag_card_to_cell(screen, 0, Vector2i(1, 0))
+	assert_eq(screen.session.resources.amount, initial - 50, "OFF deploy spends the unit cost")
+	_click_screen(screen, screen.DEV_INFINITE_RECT.get_center())
+	assert_true(screen.dev_infinite_resources)
+	_drag_card_to_cell(screen, 0, Vector2i(3, 0))
+	assert_eq(screen.session.resources.amount, initial - 50, "ON deploy refunds the exact cost")
+	_click_screen(screen, screen.DEV_INFINITE_RECT.get_center())
+	assert_false(screen.dev_infinite_resources)
+	_drag_card_to_cell(screen, 0, Vector2i(5, 0))
+	assert_eq(screen.session.resources.amount, initial - 100, "OFF deploy spends again")
+	screen.free()
+
+func test_dev_infinite_resources_refunds_legacy_merge_and_off_recharges() -> void:
+	var screen = _dev_test_screen()
+	screen.repository = repository
+	screen.session = BattleSession.new(repository, _empty_level(1000))
+	screen._build_deck_cards()
+	if not _prepare_dev_screen(screen):
+		screen.free()
+		return
+	_drag_card_to_cell(screen, 0, Vector2i(1, 0))
+	_drag_card_to_cell(screen, 0, Vector2i(2, 0))
+	var before_merge: int = screen.session.resources.amount
+	_click_screen(screen, screen.DEV_INFINITE_RECT.get_center())
+	_drag_unit_to_cell(screen, Vector2i(1, 0), Vector2i(2, 0))
+	assert_eq(screen.session.resources.amount, before_merge, "ON merge refunds the exact recipe cost")
+	assert_eq((screen.session.board.cell_value(Vector2i(2, 0)) as UnitState).unit_id, "unit_a_2")
+	_click_screen(screen, screen.DEV_INFINITE_RECT.get_center())
+	_drag_card_to_cell(screen, 0, Vector2i(3, 0))
+	assert_eq(screen.session.resources.amount, before_merge - 50, "OFF deploy spends normally after merge")
+	screen.free()
+
+func test_dev_infinite_toggle_survives_level_switch_and_restart() -> void:
+	var screen = _dev_test_screen()
+	assert_true(screen._load_level_by_id("world01_01"))
+	if not _prepare_dev_screen(screen):
+		screen.free()
+		return
+	_click_screen(screen, screen.DEV_INFINITE_RECT.get_center())
+	assert_true(screen.dev_infinite_resources)
+	screen.session.state = BattleSession.STATE_VICTORY
+	assert_true(screen._advance_to_next_level())
+	assert_eq(String(screen.repository.level.get("id")), "world01_02")
+	assert_true(screen.dev_infinite_resources, "toggle is retained when switching levels")
+	assert_eq(screen.session.resources.amount, 450, "new level session still starts with normal resources")
+	screen.session.resources.amount = 1
+	screen._restart_level()
+	assert_true(screen.dev_infinite_resources, "toggle is retained on Restart")
+	assert_eq(screen.session.resources.amount, 450, "Restart rebuilds normal level resources")
+	screen.free()
+
+func test_dev_button_does_not_respond_when_disabled() -> void:
+	var screen = _dev_test_screen()
+	screen.repository = repository
+	screen.session = BattleSession.new(repository, _empty_level(100))
+	screen.dev_tools_enabled = false
+	var before: int = screen.session.resources.amount
+	_click_screen(screen, screen.DEV_RESOURCE_RECT.get_center())
+	assert_eq(screen.session.resources.amount, before)
+	assert_false(screen.dev_infinite_resources)
+	screen.free()
