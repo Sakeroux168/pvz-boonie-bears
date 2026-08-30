@@ -530,6 +530,72 @@ func test_validator_flags_negative_recipe_cost() -> void:
 	var problems := LevelValidator.validate(_empty_level(500), repository.units, repository.enemies, recipes)
 	assert_true(problems.any(func(p: String) -> bool: return p.contains("resource_cost must be >= 0")))
 
+func test_enabled_recipe_ids_must_be_an_array() -> void:
+	var level := _empty_level(500)
+	level["enabled_recipe_ids"] = "upgrade_a_1_to_2"
+	var problems := LevelValidator.validate(level, repository.units, repository.enemies, repository.recipes)
+	assert_true(problems.any(func(p: String) -> bool: return p.contains("must be an Array")))
+
+func test_enabled_recipe_ids_rejects_bad_elements_duplicates_and_unknown_ids() -> void:
+	var level := _empty_level(500)
+	level["enabled_recipe_ids"] = [1, "", "upgrade_a_1_to_2", "upgrade_a_1_to_2", "not_a_recipe"]
+	var problems := LevelValidator.validate(level, repository.units, repository.enemies, repository.recipes)
+	assert_true(problems.any(func(p: String) -> bool: return p.contains("[0] must be a non-empty String")))
+	assert_true(problems.any(func(p: String) -> bool: return p.contains("[1] must be a non-empty String")))
+	assert_true(problems.any(func(p: String) -> bool: return p.contains("duplicate 'upgrade_a_1_to_2'")))
+	assert_true(problems.any(func(p: String) -> bool: return p.contains("unknown recipe 'not_a_recipe'")))
+
+func test_repository_load_all_fails_loud_on_invalid_enabled_recipe_ids() -> void:
+	var bad_repo := GameDataRepository.new()
+	var tmp_path := "res://reports/test_bad_recipe_gate_level.json"
+	if not DirAccess.dir_exists_absolute("res://reports"):
+		DirAccess.make_dir_recursive_absolute("res://reports")
+	var file := FileAccess.open(tmp_path, FileAccess.WRITE)
+	var level := _empty_level(500)
+	level["enabled_recipe_ids"] = ["not_a_recipe"]
+	file.store_string(JSON.stringify(level))
+	file.close()
+	GutUtils.get_error_tracker().disabled = true
+	assert_false(bad_repo.load_all(tmp_path), "invalid recipe gate must fail during load_all")
+	GutUtils.get_error_tracker().disabled = false
+	DirAccess.remove_absolute(tmp_path)
+
+func test_recipe_ids_must_be_non_empty_and_unique() -> void:
+	var recipes := repository.recipes.duplicate(true)
+	recipes[0]["id"] = "   "
+	recipes[1]["id"] = String(recipes[2]["id"])
+	var problems := LevelValidator.validate(_empty_level(500), repository.units, repository.enemies, recipes)
+	assert_true(problems.any(func(p: String) -> bool: return p.contains("id must be a non-empty String")))
+	assert_true(problems.any(func(p: String) -> bool: return p.contains("recipe id") and p.contains("duplicated")))
+
+func test_validator_flags_attacking_unit_common_numbers() -> void:
+	var units := repository.units.duplicate(true)
+	units["unit_a_1"]["range_cells"] = -0.1
+	units["unit_a_2"]["attack_period"] = 0.0
+	units["unit_b_1"]["damage"] = -1
+	units["unit_ab"]["burst_count"] = 0
+	var problems := LevelValidator.validate(_empty_level(500), units, repository.enemies, repository.recipes)
+	assert_true(problems.any(func(p: String) -> bool: return p.contains("range_cells must be >= 0")))
+	assert_true(problems.any(func(p: String) -> bool: return p.contains("attack_period must be > 0")))
+	assert_true(problems.any(func(p: String) -> bool: return p.contains("damage must be >= 0")))
+	assert_true(problems.any(func(p: String) -> bool: return p.contains("burst_count must be >= 1")))
+
+func test_validator_flags_attacking_unit_behavior_specific_numbers() -> void:
+	var units := repository.units.duplicate(true)
+	units["unit_a_3"]["heavy_every"] = 0
+	units["unit_a_3"]["heavy_damage"] = -1
+	units["unit_ab"]["guard_damage"] = -1
+	var problems := LevelValidator.validate(_empty_level(500), units, repository.enemies, repository.recipes)
+	assert_true(problems.any(func(p: String) -> bool: return p.contains("heavy_every must be >= 1")))
+	assert_true(problems.any(func(p: String) -> bool: return p.contains("heavy_damage must be >= 0")))
+	assert_true(problems.any(func(p: String) -> bool: return p.contains("guard_damage must be >= 0")))
+
+func test_validator_does_not_require_attack_fields_on_support_units() -> void:
+	var units := repository.units.duplicate(true)
+	units["future_support"] = {"id":"future_support","cost":25,"max_health":50,"behavior":"resource_support"}
+	assert_true(LevelValidator.is_valid(_empty_level(500), units, repository.enemies, repository.recipes),
+			"future non-attacking units must not inherit the attacking schema")
+
 # --- H4B: formal World 01 level 1-1 ---
 
 const WORLD01_01_PATH := "res://src/data/levels/world01_01.json"
@@ -592,7 +658,7 @@ func test_world01_01_simulates_to_victory_with_redeployed_xiong_da() -> void:
 				assert_true(battle.deploy("unit_a_1", Vector2i(3, 3))["ok"])
 				reinforced[3] = true
 	assert_eq(battle.state, BattleSession.STATE_VICTORY,
-			"open 3 lanes then reinforce with wave income should clear 1-1")
+			"open 3 lanes then reinforce from the initial resource pool should clear 1-1")
 
 func test_world01_01_abandoning_lanes_reaches_failure() -> void:
 	# Ignore two of the attacked lanes entirely: skipping defenses must be
@@ -632,9 +698,10 @@ func test_world01_01_fusion_preview_respects_gate() -> void:
 			"drag preview must not advertise a disabled recipe")
 
 func test_recipe_gate_absent_key_keeps_allow_all_behaviour() -> void:
-	# Legacy fixture (level_playable.json / _empty_level) has no
-	# enabled_recipe_ids: upgrades/fusion keep working there.
-	var battle := BattleSession.new(repository, _empty_level(1000))
+	# The shipped legacy fixture itself has no enabled_recipe_ids:
+	# upgrades/fusion keep working without synthesizing a replacement level.
+	assert_false(repository.level.has("enabled_recipe_ids"))
+	var battle := BattleSession.new(repository)
 	battle.deploy("unit_a_1", Vector2i(1, 0))
 	battle.deploy("unit_a_1", Vector2i(3, 0))
 	var result := battle.merge_cells(Vector2i(1, 0), Vector2i(3, 0), 1000)
@@ -655,4 +722,182 @@ func test_level_with_enabled_recipes_allows_listed_only() -> void:
 	battle.deploy("unit_a_1", Vector2i(3, 4))
 	var allowed := battle.merge_cells(Vector2i(1, 4), Vector2i(3, 4))
 	assert_true(allowed["ok"], "listed upgrade recipe stays legal")
+
+# --- H4B-2: formal World 01 level 1-2 ---
+
+const WORLD01_02_PATH := "res://src/data/levels/world01_02.json"
+
+func _load_world01_02_repo() -> GameDataRepository:
+	var repo := GameDataRepository.new()
+	assert_true(repo.load_all(WORLD01_02_PATH))
+	return repo
+
+func test_world01_01_points_to_world01_02() -> void:
+	var repo := _load_world01_repo()
+	assert_eq(String(repo.level.get("next_level_id")), "world01_02")
+
+func test_missing_next_level_fails_validation() -> void:
+	var level := _empty_level(500)
+	level["next_level_id"] = "world01_missing"
+	var problems := LevelValidator.validate(level, repository.units, repository.enemies, repository.recipes)
+	assert_true(problems.any(func(p: String) -> bool: return p.contains("missing level 'world01_missing'")))
+
+func test_world01_02_formal_data_passes_validator() -> void:
+	var repo := _load_world01_02_repo()
+	assert_eq(String(repo.level.get("id")), "world01_02")
+	assert_eq(String(repo.level.get("title")), "1-2 熊二来帮忙")
+	assert_false(repo.level.has("next_level_id"), "1-2 is the current end of the in-memory sequence")
+
+func test_world01_02_has_exact_tutorial_scope() -> void:
+	var repo := _load_world01_02_repo()
+	assert_eq(int(repo.level.get("lanes")), 5)
+	assert_eq(int(repo.level.get("columns")), 9)
+	assert_eq(repo.level.get("deck", []), ["unit_a_1", "unit_b_1"])
+	assert_true(repo.level.has("enabled_recipe_ids"))
+	assert_eq(repo.level.get("enabled_recipe_ids", []), [])
+	assert_eq(int(repo.level.get("minimum_protected_trees")), 0)
+	assert_eq(repo.level.get("protected_trees", []), [])
+	for wave in repo.level.get("waves", []):
+		assert_eq(String(wave.get("enemy")), "enemy_basic",
+				"1-2 must only use 木料小推车")
+
+func test_world01_02_empty_recipe_gate_blocks_both_tutorial_merges_without_pollution() -> void:
+	var repo := _load_world01_02_repo()
+	var battle := BattleSession.new(repo)
+	for placement in [
+		["unit_a_1", Vector2i(1, 0)], ["unit_a_1", Vector2i(3, 0)],
+		["unit_a_1", Vector2i(1, 1)], ["unit_b_1", Vector2i(4, 1)],
+	]:
+		assert_true(battle.deploy(placement[0], placement[1])["ok"])
+	var resource_before := battle.resources.amount
+	var a_left: UnitState = battle.board.cell_value(Vector2i(1, 0))
+	var a_right: UnitState = battle.board.cell_value(Vector2i(3, 0))
+	var mixed_a: UnitState = battle.board.cell_value(Vector2i(1, 1))
+	var mixed_b: UnitState = battle.board.cell_value(Vector2i(4, 1))
+	assert_true(battle.fusion_preview(Vector2i(1, 0), Vector2i(3, 0)).is_empty())
+	assert_true(battle.fusion_preview(Vector2i(1, 1), Vector2i(4, 1)).is_empty())
+	var upgrade := battle.merge_cells(Vector2i(1, 0), Vector2i(3, 0))
+	var cross := battle.merge_cells(Vector2i(1, 1), Vector2i(4, 1))
+	assert_eq(String(upgrade.get("reason")), "recipe_disabled_in_level")
+	assert_eq(String(cross.get("reason")), "recipe_disabled_in_level")
+	assert_same(battle.board.cell_value(Vector2i(1, 0)), a_left)
+	assert_same(battle.board.cell_value(Vector2i(3, 0)), a_right)
+	assert_same(battle.board.cell_value(Vector2i(1, 1)), mixed_a)
+	assert_same(battle.board.cell_value(Vector2i(4, 1)), mixed_b)
+	assert_eq(battle.resources.amount, resource_before)
+
+func test_world01_02_pair_formation_wins_through_real_runtime() -> void:
+	var repo := _load_world01_02_repo()
+	var battle := BattleSession.new(repo)
+	for lane in [1, 2, 3]:
+		assert_true(battle.deploy("unit_a_1", Vector2i(1, lane))["ok"])
+		assert_true(battle.deploy("unit_b_1", Vector2i(4, lane))["ok"])
+	var saw_frontline_damage := false
+	for _i in range(5000):
+		battle.tick(0.05)
+		for lane in [1, 2, 3]:
+			var value = battle.board.cell_value(Vector2i(4, lane))
+			if value is UnitState and value.health < value.max_health:
+				saw_frontline_damage = true
+		if battle.state != BattleSession.STATE_RUNNING:
+			break
+	assert_eq(battle.state, BattleSession.STATE_VICTORY,
+			"熊二前排 + 熊大后排 must clear the formal 1-2 runtime")
+	assert_true(saw_frontline_damage, "the frontline must actually absorb visible damage")
+	for lane in [1, 2, 3]:
+		assert_true(battle.board.insurance_available(lane),
+				"stable pair formation should not consume lane insurance")
+
+func _world01_02_teaching_pressure() -> Dictionary:
+	var level := _empty_level(500)
+	level["enabled_recipe_ids"] = []
+	level["waves"] = [{
+		"at": 0.0,
+		"enemy": "enemy_basic",
+		"lane": 2,
+		"start_column_override": 6.0,
+		"health_override": 180,
+	}]
+	return level
+
+func test_xiong_er_frontline_is_clearly_more_stable_than_xiong_da_alone() -> void:
+	var pair := BattleSession.new(repository, _world01_02_teaching_pressure())
+	assert_true(pair.deploy("unit_a_1", Vector2i(1, 2))["ok"])
+	assert_true(pair.deploy("unit_b_1", Vector2i(4, 2))["ok"])
+	var solo := BattleSession.new(repository, _world01_02_teaching_pressure())
+	assert_true(solo.deploy("unit_a_1", Vector2i(4, 2))["ok"])
+	var pair_took_damage := false
+	for _i in range(2000):
+		if pair.state == BattleSession.STATE_RUNNING:
+			pair.tick(0.05)
+			var guard = pair.board.cell_value(Vector2i(4, 2))
+			if guard is UnitState and guard.health < guard.max_health:
+				pair_took_damage = true
+		if solo.state == BattleSession.STATE_RUNNING:
+			solo.tick(0.05)
+		if pair.state != BattleSession.STATE_RUNNING and solo.state != BattleSession.STATE_RUNNING:
+			break
+	assert_eq(pair.state, BattleSession.STATE_VICTORY)
+	assert_true(pair_took_damage, "熊二 must actually tank the teaching pressure")
+	assert_true(pair.board.insurance_available(2), "the intended pair keeps insurance")
+	assert_false(solo.board.insurance_available(2),
+			"熊大 alone at the same frontline position must lose the lane insurance")
+
+func test_battle_screen_advances_and_restart_rebuilds_current_level() -> void:
+	var screen_script = load("res://src/ui/battle_screen.gd")
+	var screen = screen_script.new()
+	assert_true(screen._load_level_by_id("world01_01"))
+	screen.session.state = BattleSession.STATE_VICTORY
+	assert_true(screen._advance_to_next_level())
+	assert_eq(String(screen.repository.level.get("id")), "world01_02")
+	screen.session.resources.amount = 1
+	screen.session.elapsed = 25.0
+	screen.session.board.consume_insurance(2)
+	screen._restart_level()
+	assert_eq(String(screen.repository.level.get("id")), "world01_02",
+			"restart must stay on the current level")
+	assert_eq(screen.session.resources.amount, 450)
+	assert_eq(screen.session.elapsed, 0.0)
+	assert_true(screen.session.board.insurance_available(2))
+	assert_eq(screen.session.board.unit_positions().size(), 0)
+	assert_true(screen.session.recipe_gate_active)
+	assert_true(screen.session.enabled_recipe_ids.is_empty())
+	screen.free()
+
+func test_battle_session_override_rejects_non_array_recipe_gate_without_crash() -> void:
+	var level := _empty_level(500)
+	level["enabled_recipe_ids"] = "upgrade_a_1_to_2"
+	GutUtils.get_error_tracker().disabled = true
+	var battle := BattleSession.new(repository, level)
+	GutUtils.get_error_tracker().disabled = false
+	assert_eq(battle.state, BattleSession.STATE_CONFIG_ERROR)
+	assert_true(battle.enabled_recipe_ids.is_empty(),
+			"non-array gate must not be converted into a recipe id")
+
+func test_battle_session_override_rejects_non_string_recipe_gate_entry_without_crash() -> void:
+	var level := _empty_level(500)
+	level["enabled_recipe_ids"] = ["upgrade_a_1_to_2", 7]
+	GutUtils.get_error_tracker().disabled = true
+	var battle := BattleSession.new(repository, level)
+	GutUtils.get_error_tracker().disabled = false
+	assert_eq(battle.state, BattleSession.STATE_CONFIG_ERROR)
+	assert_true(battle.enabled_recipe_ids.is_empty(),
+			"invalid entry must clear the partial gate and not be interpreted")
+
+func test_battle_session_override_rejects_blank_recipe_gate_entry() -> void:
+	var level := _empty_level(500)
+	level["enabled_recipe_ids"] = ["   "]
+	GutUtils.get_error_tracker().disabled = true
+	var battle := BattleSession.new(repository, level)
+	GutUtils.get_error_tracker().disabled = false
+	assert_eq(battle.state, BattleSession.STATE_CONFIG_ERROR)
+
+func test_battle_screen_status_hides_fusion_hint_when_all_recipes_locked() -> void:
+	var screen_script = load("res://src/ui/battle_screen.gd")
+	var screen = screen_script.new()
+	assert_true(screen._load_level_by_id("world01_01"))
+	assert_eq(screen.status_text, "Drag cards to deploy.")
+	assert_true(screen._load_level_by_id("world01_02"))
+	assert_eq(screen.status_text, "Drag cards to deploy.")
+	screen.free()
 

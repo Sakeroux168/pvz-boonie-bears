@@ -2,6 +2,7 @@
   "id": "world01_01",
   "title": "1-1 有人来砍树！",
   "briefing": "有人进森林砍树了，先把伐木小车挡住！",
+  "next_level_id": "world01_02",
   "lanes": 5,
   "columns": 9,
   "initial_resource": 350,
