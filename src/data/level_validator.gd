@@ -124,6 +124,12 @@ static func _validate_units(units: Dictionary, problems: Array[String]) -> void:
 		if int(def.get("max_health", 0)) <= 0:
 			problems.append("unit '%s' max_health must be > 0 (got %s)" % [unit_id, str(def.get("max_health"))])
 		var behavior := String(def.get("behavior", ""))
+		if behavior == "resource_producer":
+			if float(def.get("production_period", 0.0)) <= 0.0:
+				problems.append("unit '%s' resource_producer production_period must be > 0" % unit_id)
+			if int(def.get("production_amount", 0)) <= 0:
+				problems.append("unit '%s' resource_producer production_amount must be > 0" % unit_id)
+			continue
 		if not ATTACKING_BEHAVIORS.has(behavior):
 			continue
 		if float(def.get("range_cells", -1.0)) < 0.0:

@@ -187,7 +187,7 @@ func _handle_dev_pointer_down(point: Vector2) -> bool:
 		return false
 	if DEV_RESOURCE_RECT.has_point(point):
 		session.resources.add(500)
-		status_text = "DEV: +500 resources."
+		status_text = "DEV: +500 \u68ee\u6797\u7269\u8d44\u3002"
 		return true
 	if DEV_INFINITE_RECT.has_point(point):
 		dev_infinite_resources = not dev_infinite_resources
@@ -250,7 +250,7 @@ func _draw() -> void:
 		return
 	var font := ThemeDB.fallback_font
 	draw_string(font, Vector2(40, 45), level_title, HORIZONTAL_ALIGNMENT_LEFT, -1, 26, Color.WHITE)
-	draw_string(font, Vector2(40, 74), "5 lanes | %d columns | resource %d" % [session.board.columns, session.resources.amount], HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(0.75, 0.85, 0.93))
+	draw_string(font, Vector2(40, 74), "5 lanes | %d columns | \u68ee\u6797\u7269\u8d44 %d" % [session.board.columns, session.resources.amount], HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(0.75, 0.85, 0.93))
 	if not level_briefing.is_empty():
 		draw_string(font, Vector2(620, 74), level_briefing, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(0.95, 0.85, 0.6))
 	draw_string(font, Vector2(40, 98), _wave_progress_text(), HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(0.65, 0.9, 1.0))
@@ -299,6 +299,16 @@ func _draw_unit(center: Vector2, unit_id: String, font: Font,
 		draw_circle(center, 20.0 + tier * 4.0, Color(0.2, 0.75, 1.0))
 	elif unit_id == "unit_b_1":
 		draw_rect(Rect2(center - Vector2(27, 27), Vector2(54, 54)), Color(1.0, 0.62, 0.22), true)
+	elif unit_id == "unit_c_1":
+		var producer_points := PackedVector2Array([
+			center + Vector2(0, -27),
+			center + Vector2(26, -8),
+			center + Vector2(16, 23),
+			center + Vector2(-16, 23),
+			center + Vector2(-26, -8),
+		])
+		draw_colored_polygon(producer_points, Color(0.35, 0.76, 0.25))
+		draw_circle(center, 8.0, Color(0.95, 0.78, 0.2))
 	else:
 		draw_circle(center - Vector2(13, 0), 23.0, Color(0.2, 0.75, 1.0))
 		draw_rect(Rect2(center + Vector2(-2, -23), Vector2(46, 46)), Color(1.0, 0.62, 0.22), true)
@@ -334,7 +344,14 @@ func _draw_cards(font: Font) -> void:
 		draw_string(font, rect.position + Vector2(20, 42),
 				"%s  cost %d" % [_display_name_for_unit(String(card["unit_id"])), int(card["cost"])],
 				HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color.WHITE)
-	draw_string(font, Vector2(1060, 385), "FUSIONS", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color.WHITE)
+		var definition := repository.unit_def(String(card["unit_id"]))
+		if String(definition.get("behavior", "")) == "resource_producer":
+			var period_text := ("%.1f" % float(definition.get("production_period", 0.0))).trim_suffix(".0")
+			draw_string(font, rect.position + Vector2(20, 63),
+					"\u6bcf%ss +%d" % [period_text, int(definition.get("production_amount", 0))],
+					HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.9, 1.0, 0.8))
+	var fusion_title_y := maxf(385.0, CARD_ORIGIN.y + CARD_SPACING * deck_cards.size() + 10.0)
+	draw_string(font, Vector2(1060, fusion_title_y), "FUSIONS", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color.WHITE)
 	# Recipe hints are data-driven and level-gated: only recipes enabled by the
 	# current level's enabled_recipe_ids are shown (GPT review on PR #8).
 	var shown := 0
@@ -342,19 +359,19 @@ func _draw_cards(font: Font) -> void:
 		var recipe_id := String(recipe.get("id", ""))
 		if session.recipe_gate_active and not session.enabled_recipe_ids.has(recipe_id):
 			continue
-		draw_string(font, Vector2(1060, 410 + shown * 25),
+		draw_string(font, Vector2(1060, fusion_title_y + 25.0 + shown * 25.0),
 				"%s + %s -> %s" % [_display_name_for_unit(String(recipe.get("input_a", ""))),
 						_display_name_for_unit(String(recipe.get("input_b", ""))),
 						_display_name_for_unit(String(recipe.get("result", "")))],
 				HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.8, 0.9, 0.95))
 		shown += 1
 	if shown == 0:
-		draw_string(font, Vector2(1060, 410), "本关未解锁合成", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.5, 0.55, 0.6))
+		draw_string(font, Vector2(1060, fusion_title_y + 25.0), "\u672c\u5173\u672a\u89e3\u9501\u5408\u6210", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.5, 0.55, 0.6))
 
 func _draw_dev_controls(font: Font) -> void:
 	draw_string(font, Vector2(1040, 505), "DEV TOOLS", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(1.0, 0.75, 0.35))
 	draw_rect(DEV_RESOURCE_RECT, Color(0.3, 0.25, 0.1), true)
-	draw_string(font, DEV_RESOURCE_RECT.position + Vector2(14, 23), "DEV +500资源", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color.WHITE)
+	draw_string(font, DEV_RESOURCE_RECT.position + Vector2(14, 23), "DEV +500\u68ee\u6797\u7269\u8d44", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color.WHITE)
 	var infinite_color := Color(0.18, 0.45, 0.25) if dev_infinite_resources else Color(0.25, 0.28, 0.32)
 	draw_rect(DEV_INFINITE_RECT, infinite_color, true)
 	var infinite_label := "DEV 无限资源：ON" if dev_infinite_resources else "DEV 无限资源：OFF"

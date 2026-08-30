@@ -7,6 +7,7 @@ var tier := 1
 var max_health := 1
 var health := 1
 var attack_cooldown := 0.0
+var production_cooldown := 0.0
 var shots_fired := 0
 var status: Dictionary = {}
 
@@ -17,6 +18,7 @@ static func from_definition(definition: Dictionary) -> UnitState:
 	unit.tier = int(definition.get("tier", 1))
 	unit.max_health = int(definition.get("max_health", 1))
 	unit.health = unit.max_health
+	unit.production_cooldown = float(definition.get("production_period", 0.0))
 	return unit
 
 func health_ratio() -> float:

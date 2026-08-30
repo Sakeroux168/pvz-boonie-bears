@@ -57,6 +57,18 @@
     "burst_count": 1,
     "behavior": "melee_guard"
   },
+  "unit_c_1": {
+    "id": "unit_c_1",
+    "family": "unit_c",
+    "tier": 1,
+    "display_name": "蹦蹦 I",
+    "character_key": "beng_beng",
+    "cost": 50,
+    "max_health": 70,
+    "production_period": 8.0,
+    "production_amount": 25,
+    "behavior": "resource_producer"
+  },
   "unit_ab": {
     "id": "unit_ab",
     "family": "unit_ab",
