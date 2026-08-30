@@ -7,6 +7,9 @@ const CARD_ORIGIN := Vector2(1060.0, 170.0)
 const CARD_SIZE := Vector2(170.0, 70.0)
 const CARD_SPACING := 90.0
 const CARD_COLORS := [Color(0.15, 0.55, 0.75), Color(0.72, 0.4, 0.12), Color(0.4, 0.62, 0.2), Color(0.55, 0.35, 0.7)]
+const START_LEVEL_ID := "world01_01"
+const RESTART_RECT := Rect2(505.0, 365.0, 130.0, 40.0)
+const NEXT_LEVEL_RECT := Rect2(645.0, 365.0, 130.0, 40.0)
 
 var repository := GameDataRepository.new()
 var session: BattleSession
@@ -27,14 +30,34 @@ func _ready() -> void:
 	# H4B: the game boots into the formal World 01 level 1-1. The old
 	# level_playable.json stays as a dev/regression fixture, still loadable
 	# via BattleSession tests or by passing a path here.
-	if not repository.load_all("res://src/data/levels/world01_01.json"):
+	if not _load_level_by_id(START_LEVEL_ID):
 		push_error("World01 level 1-1 failed to load")
-		return
+
+func _load_level_by_id(level_id: String) -> bool:
+	# Load into a candidate first: a bad/missing next level cannot poison the
+	# currently playable repository or session.
+	var candidate := GameDataRepository.new()
+	if not candidate.load_level_by_id(level_id):
+		push_error("Level '%s' failed to load" % level_id)
+		return false
+	repository = candidate
 	level_title = String(repository.level.get("title", "World 01"))
 	level_briefing = String(repository.level.get("briefing", ""))
 	_build_deck_cards()
 	session = BattleSession.new(repository)
+	status_text = "Drag cards to deploy. Drag a unit onto another to merge."
+	drag_payload = {}
+	hover_cell = Vector2i(-1, -1)
 	queue_redraw()
+	return true
+
+func _advance_to_next_level() -> bool:
+	if session == null or session.state != BattleSession.STATE_VICTORY:
+		return false
+	var next_level_id := String(repository.level.get("next_level_id", ""))
+	if next_level_id.is_empty():
+		return false
+	return _load_level_by_id(next_level_id)
 
 # Deck comes from the level config; cost always reads the unit definition so
 # JSON and Battle Core share one source of truth. Adding a third or fourth
@@ -85,11 +108,16 @@ func _unhandled_input(event: InputEvent) -> void:
 	match pointer["type"]:
 		"down":
 			# Restart button is only visible/clickable once the battle ended.
-			if session != null and session.state != BattleSession.STATE_RUNNING \
-					and RESTART_RECT.has_point(pointer_position):
-				_restart_level()
-				queue_redraw()
-				return
+			if session != null and session.state != BattleSession.STATE_RUNNING:
+				if RESTART_RECT.has_point(pointer_position):
+					_restart_level()
+					queue_redraw()
+					return
+				if session.state == BattleSession.STATE_VICTORY \
+						and NEXT_LEVEL_RECT.has_point(pointer_position):
+					_advance_to_next_level()
+					queue_redraw()
+					return
 			_begin_drag(pointer_position)
 		"move":
 			pass
@@ -168,7 +196,7 @@ func _draw_board(font: Font) -> void:
 			draw_rect(rect.grow(-1.0), fill, true)
 			var value = session.board.cell_value(cell)
 			if value is UnitState:
-				_draw_unit(rect.get_center(), value.unit_id, font)
+				_draw_unit(rect.get_center(), value.unit_id, font, value.health, value.max_health)
 			elif value is Dictionary and value.get("kind", "") == "protected_tree":
 				_draw_tree(rect.get_center(), session.board.tree_at(cell), font)
 		var insurance_color := Color(0.2, 0.85, 0.45) if session.board.insurance_available(lane) else Color(0.25, 0.27, 0.3)
@@ -183,7 +211,8 @@ func _draw_board(font: Font) -> void:
 			preview_color = Color(0.3, 1.0, 0.5, 0.38) if not recipe.is_empty() else Color(1.0, 0.25, 0.25, 0.28)
 		draw_rect(_cell_rect(hover_cell).grow(-3.0), preview_color, true)
 
-func _draw_unit(center: Vector2, unit_id: String, font: Font) -> void:
+func _draw_unit(center: Vector2, unit_id: String, font: Font,
+		health: int = -1, max_health: int = -1) -> void:
 	if unit_id.begins_with("unit_a"):
 		var tier := 1
 		if unit_id.ends_with("_2"):
@@ -196,6 +225,13 @@ func _draw_unit(center: Vector2, unit_id: String, font: Font) -> void:
 	else:
 		draw_circle(center - Vector2(13, 0), 23.0, Color(0.2, 0.75, 1.0))
 		draw_rect(Rect2(center + Vector2(-2, -23), Vector2(46, 46)), Color(1.0, 0.62, 0.22), true)
+	if max_health > 0 and health >= 0:
+		var ratio := clampf(float(health) / float(max_health), 0.0, 1.0)
+		var bar_rect := Rect2(center + Vector2(-34.0, -40.0), Vector2(68.0, 7.0))
+		draw_rect(bar_rect, Color(0.12, 0.12, 0.12), true)
+		draw_rect(Rect2(bar_rect.position + Vector2(1.0, 1.0),
+				Vector2((bar_rect.size.x - 2.0) * ratio, bar_rect.size.y - 2.0)),
+				Color(0.25, 0.85, 0.35) if ratio > 0.35 else Color(0.95, 0.28, 0.2), true)
 	draw_string(font, center + Vector2(-45, 42), _display_name_for_unit(unit_id), HORIZONTAL_ALIGNMENT_CENTER, 90, 13, Color.WHITE)
 
 func _draw_tree(center: Vector2, tree: Dictionary, font: Font) -> void:
@@ -245,11 +281,13 @@ func _draw_status(font: Font) -> void:
 		var text := "VICTORY" if session.state == BattleSession.STATE_VICTORY else "FAILURE"
 		draw_rect(Rect2(330, 270, 620, 130), Color(0.03, 0.05, 0.07, 0.92), true)
 		draw_string(font, Vector2(560, 345), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 34, Color.WHITE)
-		# Restart button (or press R).
+		# Restart always rebuilds the current level (or press R).
 		draw_rect(RESTART_RECT, Color(0.15, 0.45, 0.25), true)
 		draw_string(font, RESTART_RECT.position + Vector2(30, 30), "再来一局 (R)", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color.WHITE)
-
-const RESTART_RECT := Rect2(575.0, 365.0, 130.0, 40.0)
+		if session.state == BattleSession.STATE_VICTORY \
+				and not String(repository.level.get("next_level_id", "")).is_empty():
+			draw_rect(NEXT_LEVEL_RECT, Color(0.18, 0.42, 0.72), true)
+			draw_string(font, NEXT_LEVEL_RECT.position + Vector2(32, 30), "下一关", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color.WHITE)
 
 func _unhandled_key_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and event.keycode == KEY_R \

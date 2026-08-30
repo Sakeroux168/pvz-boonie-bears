@@ -1,6 +1,8 @@
 class_name GameDataRepository
 extends RefCounted
 
+const LEVEL_DIRECTORY := "res://src/data/levels"
+
 var units: Dictionary = {}
 var enemies: Dictionary = {}
 var recipes: Array = []
@@ -20,6 +22,18 @@ func load_all(level_path: String = "res://src/data/level_playable.json") -> bool
 	if not problems.is_empty():
 		for problem in problems:
 			push_error("Level validation: %s" % problem)
+		return false
+	return true
+
+func load_level_by_id(level_id: String) -> bool:
+	if level_id.is_empty() or level_id.contains("/") or level_id.contains("\\") or level_id.contains(".."):
+		push_error("Invalid level id: %s" % level_id)
+		return false
+	if not load_all("%s/%s.json" % [LEVEL_DIRECTORY, level_id]):
+		return false
+	if String(level.get("id", "")) != level_id:
+		push_error("Level file id '%s' does not match requested id '%s'"
+				% [String(level.get("id", "")), level_id])
 		return false
 	return true
 

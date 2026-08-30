@@ -7,6 +7,14 @@ extends RefCounted
 const FIXED_LANES := 5
 const MIN_COLUMNS := 1
 const MAX_COLUMNS := 20
+const LEVEL_DIRECTORY := "res://src/data/levels"
+const ATTACKING_BEHAVIORS := {
+	"single_ranged": true,
+	"double_ranged": true,
+	"double_ranged_with_periodic_heavy": true,
+	"melee_guard": true,
+	"ranged_plus_guard_collaboration": true,
+}
 
 
 static func validate(level: Dictionary, units: Dictionary,
@@ -20,6 +28,8 @@ static func validate(level: Dictionary, units: Dictionary,
 	_validate_units(units, problems)
 	_validate_enemies(enemies, problems)
 	_validate_recipes(units, recipes, problems)
+	_validate_enabled_recipe_ids(level, recipes, problems)
+	_validate_progression(level, problems)
 	return problems
 
 static func is_valid(level: Dictionary, units: Dictionary,
@@ -113,6 +123,25 @@ static func _validate_units(units: Dictionary, problems: Array[String]) -> void:
 			problems.append("unit '%s' cost must be >= 0 (got %s)" % [unit_id, str(def.get("cost"))])
 		if int(def.get("max_health", 0)) <= 0:
 			problems.append("unit '%s' max_health must be > 0 (got %s)" % [unit_id, str(def.get("max_health"))])
+		var behavior := String(def.get("behavior", ""))
+		if not ATTACKING_BEHAVIORS.has(behavior):
+			continue
+		if float(def.get("range_cells", -1.0)) < 0.0:
+			problems.append("attacking unit '%s' range_cells must be >= 0 (got %s)" % [unit_id, str(def.get("range_cells"))])
+		if float(def.get("attack_period", 0.0)) <= 0.0:
+			problems.append("attacking unit '%s' attack_period must be > 0 (got %s)" % [unit_id, str(def.get("attack_period"))])
+		if int(def.get("damage", -1)) < 0:
+			problems.append("attacking unit '%s' damage must be >= 0 (got %s)" % [unit_id, str(def.get("damage"))])
+		if int(def.get("burst_count", 0)) < 1:
+			problems.append("attacking unit '%s' burst_count must be >= 1 (got %s)" % [unit_id, str(def.get("burst_count"))])
+		if behavior == "double_ranged_with_periodic_heavy":
+			if int(def.get("heavy_every", 0)) < 1:
+				problems.append("unit '%s' heavy_every must be >= 1 (got %s)" % [unit_id, str(def.get("heavy_every"))])
+			if int(def.get("heavy_damage", -1)) < 0:
+				problems.append("unit '%s' heavy_damage must be >= 0 (got %s)" % [unit_id, str(def.get("heavy_damage"))])
+		if behavior == "ranged_plus_guard_collaboration" \
+				and int(def.get("guard_damage", -1)) < 0:
+			problems.append("unit '%s' guard_damage must be >= 0 (got %s)" % [unit_id, str(def.get("guard_damage"))])
 
 
 static func _validate_enemies(enemies: Dictionary, problems: Array[String]) -> void:
@@ -138,13 +167,68 @@ static func _validate_deck(level: Dictionary, units: Dictionary,
 
 static func _validate_recipes(units: Dictionary, recipes: Array,
 		problems: Array[String]) -> void:
+	var seen_ids := {}
 	for index in recipes.size():
 		var recipe: Dictionary = recipes[index]
+		var recipe_id := ""
+		if recipe.get("id") is String:
+			recipe_id = String(recipe["id"])
+		if recipe_id.strip_edges().is_empty():
+			problems.append("recipe %d id must be a non-empty String" % index)
+		elif seen_ids.has(recipe_id):
+			problems.append("recipe id '%s' duplicated" % recipe_id)
+		else:
+			seen_ids[recipe_id] = true
 		for key in ["input_a", "input_b", "result"]:
 			var unit_id := String(recipe.get(key, ""))
 			if not units.has(unit_id):
 				problems.append("recipe %d ('%s') %s references unknown unit '%s'"
-						% [index, String(recipe.get("id", "")), key, unit_id])
+						% [index, recipe_id, key, unit_id])
 		if int(recipe.get("resource_cost", 0)) < 0:
 			problems.append("recipe %d ('%s') resource_cost must be >= 0 (got %s)"
-					% [index, String(recipe.get("id", "")), str(recipe.get("resource_cost"))])
+					% [index, recipe_id, str(recipe.get("resource_cost"))])
+
+
+static func _validate_enabled_recipe_ids(level: Dictionary, recipes: Array,
+		problems: Array[String]) -> void:
+	# Missing is the compatibility contract: old levels allow every recipe.
+	if not level.has("enabled_recipe_ids"):
+		return
+	var raw_ids: Variant = level["enabled_recipe_ids"]
+	if not raw_ids is Array:
+		problems.append("enabled_recipe_ids must be an Array when present")
+		return
+	var known_ids := {}
+	for recipe in recipes:
+		var raw_recipe_id: Variant = recipe.get("id")
+		if raw_recipe_id is String and not String(raw_recipe_id).is_empty():
+			known_ids[String(raw_recipe_id)] = true
+	var seen_ids := {}
+	for index in raw_ids.size():
+		var raw_id: Variant = raw_ids[index]
+		if not raw_id is String or String(raw_id).strip_edges().is_empty():
+			problems.append("enabled_recipe_ids[%d] must be a non-empty String" % index)
+			continue
+		var recipe_id := String(raw_id)
+		if seen_ids.has(recipe_id):
+			problems.append("enabled_recipe_ids contains duplicate '%s'" % recipe_id)
+		else:
+			seen_ids[recipe_id] = true
+		if not known_ids.has(recipe_id):
+			problems.append("enabled_recipe_ids references unknown recipe '%s'" % recipe_id)
+
+
+static func _validate_progression(level: Dictionary, problems: Array[String]) -> void:
+	if not level.has("next_level_id"):
+		return
+	var raw_id: Variant = level["next_level_id"]
+	if not raw_id is String or String(raw_id).is_empty():
+		problems.append("next_level_id must be a non-empty String when present")
+		return
+	var next_level_id := String(raw_id)
+	if next_level_id.contains("/") or next_level_id.contains("\\") or next_level_id.contains(".."):
+		problems.append("next_level_id must be a plain level id (got '%s')" % next_level_id)
+		return
+	var next_path := "%s/%s.json" % [LEVEL_DIRECTORY, next_level_id]
+	if not FileAccess.file_exists(next_path):
+		problems.append("next_level_id references missing level '%s'" % next_level_id)

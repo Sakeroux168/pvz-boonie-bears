@@ -1,0 +1,24 @@
+{
+  "id": "world01_02",
+  "title": "1-2 熊二来帮忙",
+  "briefing": "让熊二顶在前排承伤，熊大留在后排输出。",
+  "lanes": 5,
+  "columns": 9,
+  "initial_resource": 450,
+  "deck": ["unit_a_1", "unit_b_1"],
+  "enabled_recipe_ids": [],
+  "minimum_protected_trees": 0,
+  "protected_trees": [],
+  "waves": [
+    {"at": 3.0, "enemy": "enemy_basic", "lane": 2, "start_column_override": 6.0, "health_override": 150},
+    {"at": 13.0, "enemy": "enemy_basic", "lane": 1, "start_column_override": 6.0, "health_override": 150},
+    {"at": 18.0, "enemy": "enemy_basic", "lane": 3, "start_column_override": 6.0, "health_override": 150},
+    {"at": 34.0, "enemy": "enemy_basic", "lane": 2, "start_column_override": 6.0, "health_override": 160},
+    {"at": 40.0, "enemy": "enemy_basic", "lane": 1, "start_column_override": 6.0, "health_override": 160},
+    {"at": 45.0, "enemy": "enemy_basic", "lane": 3, "start_column_override": 6.0, "health_override": 160},
+    {"at": 64.0, "enemy": "enemy_basic", "lane": 2, "start_column_override": 6.0, "health_override": 170},
+    {"at": 70.0, "enemy": "enemy_basic", "lane": 1, "start_column_override": 6.0, "health_override": 170},
+    {"at": 75.0, "enemy": "enemy_basic", "lane": 3, "start_column_override": 6.0, "health_override": 170},
+    {"at": 92.0, "enemy": "enemy_basic", "lane": 2, "start_column_override": 6.0, "health_override": 180}
+  ]
+}
