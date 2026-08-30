@@ -243,6 +243,9 @@ func _tick_units(delta: float) -> void:
 	for unit_cell in board.unit_positions():
 		var unit: UnitState = board.cell_value(unit_cell)
 		var definition := repository.unit_def(unit.unit_id)
+		if String(definition.get("behavior", "")) == "resource_producer":
+			_tick_resource_producer(unit, definition, delta)
+			continue
 		unit.attack_cooldown = maxf(0.0, unit.attack_cooldown - delta)
 		if unit.attack_cooldown > 0.0:
 			continue
@@ -266,6 +269,14 @@ func _tick_units(delta: float) -> void:
 			damage += int(definition.get("heavy_damage", 0))
 		selected.take_damage(damage)
 		unit.attack_cooldown = float(definition.get("attack_period", 1.0))
+
+func _tick_resource_producer(unit: UnitState, definition: Dictionary, delta: float) -> void:
+	var period := float(definition["production_period"])
+	var amount := int(definition["production_amount"])
+	unit.production_cooldown -= delta
+	while unit.production_cooldown <= 0.0:
+		resources.add(amount)
+		unit.production_cooldown += period
 
 func _cleanup_enemies() -> void:
 	enemies = enemies.filter(func(enemy): return not enemy.defeated and not enemy.crossed_finish)

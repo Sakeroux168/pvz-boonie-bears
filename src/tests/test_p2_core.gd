@@ -746,7 +746,8 @@ func test_world01_02_formal_data_passes_validator() -> void:
 	var repo := _load_world01_02_repo()
 	assert_eq(String(repo.level.get("id")), "world01_02")
 	assert_eq(String(repo.level.get("title")), "1-2 熊二来帮忙")
-	assert_false(repo.level.has("next_level_id"), "1-2 is the current end of the in-memory sequence")
+	assert_eq(String(repo.level.get("next_level_id")), "world01_03",
+			"1-2 now advances to the formal economy tutorial")
 
 func test_world01_02_has_exact_tutorial_scope() -> void:
 	var repo := _load_world01_02_repo()
