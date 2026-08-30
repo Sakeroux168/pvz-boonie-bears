@@ -34,14 +34,33 @@ func _init(p_repository: GameDataRepository, level_override: Dictionary = {}) ->
 	level = level_override.duplicate(true) if not level_override.is_empty() else repository.level.duplicate(true)
 	if level.has("enabled_recipe_ids"):
 		recipe_gate_active = true
-		for rid in level["enabled_recipe_ids"]:
-			enabled_recipe_ids[String(rid)] = true
+		_configure_recipe_gate(level["enabled_recipe_ids"])
 	board = BoardState.new(int(level.get("lanes", 5)), int(level.get("columns", 9)))
 	resources = ResourcePool.new(int(level.get("initial_resource", 450)))
 	fusion = FusionService.new(repository)
 	tree_rule = ProtectedTreeRule.new(int(level.get("minimum_protected_trees", 0)))
 	for tree in level.get("protected_trees", []):
 		board.place_tree(String(tree.get("id", "")), Vector2i(int(tree.get("column", 0)), int(tree.get("lane", 0))), int(tree.get("health", 100)))
+
+func _configure_recipe_gate(raw_gate: Variant) -> void:
+	# GameDataRepository validates shipped files, but BattleSession also has a
+	# public level_override path used by tools/tests. Keep this boundary safe
+	# without duplicating the full level schema validator.
+	if not raw_gate is Array:
+		_fail_config("enabled_recipe_ids must be an Array when present")
+		return
+	var allowed_ids: Array = raw_gate
+	for index in allowed_ids.size():
+		var raw_id: Variant = allowed_ids[index]
+		if not raw_id is String or String(raw_id).strip_edges().is_empty():
+			_fail_config("enabled_recipe_ids[%d] must be a non-empty String" % index)
+			return
+		enabled_recipe_ids[String(raw_id)] = true
+
+func _fail_config(message: String) -> void:
+	state = STATE_CONFIG_ERROR
+	enabled_recipe_ids.clear()
+	push_error("BattleSession config error: %s" % message)
 
 func deploy(unit_id: String, cell: Vector2i) -> Dictionary:
 	if state != STATE_RUNNING:

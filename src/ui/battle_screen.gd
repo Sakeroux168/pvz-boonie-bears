@@ -45,11 +45,22 @@ func _load_level_by_id(level_id: String) -> bool:
 	level_briefing = String(repository.level.get("briefing", ""))
 	_build_deck_cards()
 	session = BattleSession.new(repository)
-	status_text = "Drag cards to deploy. Drag a unit onto another to merge."
+	status_text = _initial_status_text()
 	drag_payload = {}
 	hover_cell = Vector2i(-1, -1)
 	queue_redraw()
 	return true
+
+func _initial_status_text() -> String:
+	var has_available_recipe := false
+	for recipe in repository.recipes:
+		var recipe_id := String(recipe.get("id", ""))
+		if not session.recipe_gate_active or session.enabled_recipe_ids.has(recipe_id):
+			has_available_recipe = true
+			break
+	if has_available_recipe:
+		return "Drag cards to deploy. Drag a unit onto another to merge."
+	return "Drag cards to deploy."
 
 func _advance_to_next_level() -> bool:
 	if session == null or session.state != BattleSession.STATE_VICTORY:

@@ -864,3 +864,40 @@ func test_battle_screen_advances_and_restart_rebuilds_current_level() -> void:
 	assert_true(screen.session.enabled_recipe_ids.is_empty())
 	screen.free()
 
+func test_battle_session_override_rejects_non_array_recipe_gate_without_crash() -> void:
+	var level := _empty_level(500)
+	level["enabled_recipe_ids"] = "upgrade_a_1_to_2"
+	GutUtils.get_error_tracker().disabled = true
+	var battle := BattleSession.new(repository, level)
+	GutUtils.get_error_tracker().disabled = false
+	assert_eq(battle.state, BattleSession.STATE_CONFIG_ERROR)
+	assert_true(battle.enabled_recipe_ids.is_empty(),
+			"non-array gate must not be converted into a recipe id")
+
+func test_battle_session_override_rejects_non_string_recipe_gate_entry_without_crash() -> void:
+	var level := _empty_level(500)
+	level["enabled_recipe_ids"] = ["upgrade_a_1_to_2", 7]
+	GutUtils.get_error_tracker().disabled = true
+	var battle := BattleSession.new(repository, level)
+	GutUtils.get_error_tracker().disabled = false
+	assert_eq(battle.state, BattleSession.STATE_CONFIG_ERROR)
+	assert_true(battle.enabled_recipe_ids.is_empty(),
+			"invalid entry must clear the partial gate and not be interpreted")
+
+func test_battle_session_override_rejects_blank_recipe_gate_entry() -> void:
+	var level := _empty_level(500)
+	level["enabled_recipe_ids"] = ["   "]
+	GutUtils.get_error_tracker().disabled = true
+	var battle := BattleSession.new(repository, level)
+	GutUtils.get_error_tracker().disabled = false
+	assert_eq(battle.state, BattleSession.STATE_CONFIG_ERROR)
+
+func test_battle_screen_status_hides_fusion_hint_when_all_recipes_locked() -> void:
+	var screen_script = load("res://src/ui/battle_screen.gd")
+	var screen = screen_script.new()
+	assert_true(screen._load_level_by_id("world01_01"))
+	assert_eq(screen.status_text, "Drag cards to deploy.")
+	assert_true(screen._load_level_by_id("world01_02"))
+	assert_eq(screen.status_text, "Drag cards to deploy.")
+	screen.free()
+
