@@ -10,6 +10,8 @@ const CARD_COLORS := [Color(0.15, 0.55, 0.75), Color(0.72, 0.4, 0.12), Color(0.4
 const START_LEVEL_ID := "world01_01"
 const RESTART_RECT := Rect2(505.0, 365.0, 130.0, 40.0)
 const NEXT_LEVEL_RECT := Rect2(645.0, 365.0, 130.0, 40.0)
+const DEV_RESOURCE_RECT := Rect2(1040.0, 520.0, 220.0, 34.0)
+const DEV_INFINITE_RECT := Rect2(1040.0, 562.0, 220.0, 34.0)
 
 var repository := GameDataRepository.new()
 var session: BattleSession
@@ -25,6 +27,8 @@ var level_briefing := ""
 # Deck entries: [{"unit_id": String, "rect": Rect2, "cost": int}] — built once
 # from level.deck + repository unit definitions (single source of truth for cost).
 var deck_cards: Array[Dictionary] = []
+var dev_tools_enabled := OS.is_debug_build()
+var dev_infinite_resources := false
 
 func _ready() -> void:
 	# H4B: the game boots into the formal World 01 level 1-1. The old
@@ -61,6 +65,36 @@ func _initial_status_text() -> String:
 	if has_available_recipe:
 		return "Drag cards to deploy. Drag a unit onto another to merge."
 	return "Drag cards to deploy."
+
+func _wave_total() -> int:
+	if session == null:
+		return 0
+	var waves: Array = session.level.get("waves", [])
+	return waves.size()
+
+func _wave_progress_text() -> String:
+	var total := _wave_total()
+	var current := 0
+	if session != null:
+		current = clampi(session.next_wave_index, 0, total)
+	return "波次 %d / %d" % [current, total]
+
+func _next_wave_seconds() -> float:
+	if session == null:
+		return 0.0
+	var waves: Array = session.level.get("waves", [])
+	if session.next_wave_index < 0 or session.next_wave_index >= waves.size():
+		return 0.0
+	var wave: Dictionary = waves[session.next_wave_index]
+	return maxf(0.0, float(wave.get("at", 0.0)) - session.elapsed)
+
+func _next_wave_text() -> String:
+	if session == null:
+		return "下一波：0.0s"
+	var waves: Array = session.level.get("waves", [])
+	if session.next_wave_index >= waves.size():
+		return "全部波次已出"
+	return "下一波：%.1fs" % _next_wave_seconds()
 
 func _advance_to_next_level() -> bool:
 	if session == null or session.state != BattleSession.STATE_VICTORY:
@@ -118,6 +152,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	hover_cell = _cell_from_point(pointer_position)
 	match pointer["type"]:
 		"down":
+			if _handle_dev_pointer_down(pointer_position):
+				queue_redraw()
+				return
 			# Restart button is only visible/clickable once the battle ended.
 			if session != null and session.state != BattleSession.STATE_RUNNING:
 				if RESTART_RECT.has_point(pointer_position):
@@ -142,6 +179,29 @@ func _restart_level() -> void:
 	hover_cell = Vector2i(-1, -1)
 	session = BattleSession.new(repository)
 
+func _dev_tools_available() -> bool:
+	return dev_tools_enabled and OS.is_debug_build()
+
+func _handle_dev_pointer_down(point: Vector2) -> bool:
+	if not _dev_tools_available() or session == null:
+		return false
+	if DEV_RESOURCE_RECT.has_point(point):
+		session.resources.add(500)
+		status_text = "DEV: +500 resources."
+		return true
+	if DEV_INFINITE_RECT.has_point(point):
+		dev_infinite_resources = not dev_infinite_resources
+		status_text = "DEV infinite resources: ON" if dev_infinite_resources else "DEV infinite resources: OFF"
+		return true
+	return false
+
+func _refund_dev_spend(resource_before: int, result: Dictionary) -> void:
+	if not _dev_tools_available() or not dev_infinite_resources or not result.get("ok", false):
+		return
+	var spent := resource_before - session.resources.amount
+	if spent > 0:
+		session.resources.add(spent)
+
 func _begin_drag(point: Vector2) -> void:
 	if session == null or session.state != BattleSession.STATE_RUNNING:
 		return
@@ -157,6 +217,7 @@ func _begin_drag(point: Vector2) -> void:
 func _finish_drag(point: Vector2) -> void:
 	if drag_payload.is_empty() or session == null:
 		return
+	var resource_before := session.resources.amount
 	var target := _cell_from_point(point)
 	var result: Dictionary
 	if drag_payload["kind"] == "card":
@@ -165,6 +226,7 @@ func _finish_drag(point: Vector2) -> void:
 	else:
 		result = session.merge_cells(drag_payload["source"], target)
 		status_text = "Merged -> %s" % result.get("result", "") if result.get("ok", false) else "Rejected: %s" % result.get("reason", "unknown")
+	_refund_dev_spend(resource_before, result)
 	drag_payload = {}
 	hover_cell = Vector2i(-1, -1)
 
@@ -191,8 +253,12 @@ func _draw() -> void:
 	draw_string(font, Vector2(40, 74), "5 lanes | %d columns | resource %d" % [session.board.columns, session.resources.amount], HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(0.75, 0.85, 0.93))
 	if not level_briefing.is_empty():
 		draw_string(font, Vector2(620, 74), level_briefing, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(0.95, 0.85, 0.6))
+	draw_string(font, Vector2(40, 98), _wave_progress_text(), HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(0.65, 0.9, 1.0))
+	draw_string(font, Vector2(205, 98), _next_wave_text(), HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(0.95, 0.85, 0.55))
 	_draw_board(font)
 	_draw_cards(font)
+	if _dev_tools_available():
+		_draw_dev_controls(font)
 	_draw_status(font)
 	if not drag_payload.is_empty():
 		_draw_drag_preview(font)
@@ -284,6 +350,15 @@ func _draw_cards(font: Font) -> void:
 		shown += 1
 	if shown == 0:
 		draw_string(font, Vector2(1060, 410), "本关未解锁合成", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.5, 0.55, 0.6))
+
+func _draw_dev_controls(font: Font) -> void:
+	draw_string(font, Vector2(1040, 505), "DEV TOOLS", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(1.0, 0.75, 0.35))
+	draw_rect(DEV_RESOURCE_RECT, Color(0.3, 0.25, 0.1), true)
+	draw_string(font, DEV_RESOURCE_RECT.position + Vector2(14, 23), "DEV +500资源", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color.WHITE)
+	var infinite_color := Color(0.18, 0.45, 0.25) if dev_infinite_resources else Color(0.25, 0.28, 0.32)
+	draw_rect(DEV_INFINITE_RECT, infinite_color, true)
+	var infinite_label := "DEV 无限资源：ON" if dev_infinite_resources else "DEV 无限资源：OFF"
+	draw_string(font, DEV_INFINITE_RECT.position + Vector2(14, 23), infinite_label, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color.WHITE)
 
 func _draw_status(font: Font) -> void:
 	draw_string(font, Vector2(40, 642), status_text, HORIZONTAL_ALIGNMENT_LEFT, 930, 16, Color(0.78, 0.86, 0.92))
