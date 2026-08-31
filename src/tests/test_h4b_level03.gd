@@ -125,7 +125,7 @@ func test_world01_03_formal_data_has_exact_tutorial_scope() -> void:
 	assert_between(float(waves[-1].get("at")), 90.0, 120.0)
 	for wave in waves:
 		assert_eq(String(wave.get("enemy")), "enemy_basic")
-	assert_false(repo.level.has("next_level_id"))
+	assert_eq(String(repo.level.get("next_level_id")), "world01_04")
 
 func test_world01_03_recipe_gate_blocks_upgrade_and_cross_fusion() -> void:
 	var battle := BattleSession.new(_load_world01_03_repo())
@@ -230,7 +230,7 @@ func test_dev_infinite_refund_does_not_suppress_producer_income() -> void:
 	assert_eq(screen.session.resources.amount, before + 25)
 	screen.free()
 
-func test_battle_screen_advances_full_world01_chain_to_level03() -> void:
+func test_battle_screen_advances_full_world01_chain_to_level04() -> void:
 	var screen_script = load("res://src/ui/battle_screen.gd")
 	var screen = screen_script.new()
 	assert_true(screen._load_level_by_id("world01_01"))
@@ -243,4 +243,7 @@ func test_battle_screen_advances_full_world01_chain_to_level03() -> void:
 	assert_eq(screen.deck_cards.size(), 3)
 	assert_eq(String(screen.deck_cards[2].get("unit_id")), "unit_c_1")
 	assert_eq(int(screen.deck_cards[2].get("cost")), 50)
+	screen.session.state = BattleSession.STATE_VICTORY
+	assert_true(screen._advance_to_next_level())
+	assert_eq(String(screen.repository.level.get("id")), "world01_04")
 	screen.free()
