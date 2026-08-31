@@ -19,7 +19,7 @@ var pointer_router := PointerRouter.new()
 var drag_payload: Dictionary = {}
 var pointer_position := Vector2.ZERO
 var hover_cell := Vector2i(-1, -1)
-var status_text := "Drag cards to deploy. Drag a unit onto another to merge."
+var status_text := "Drag cards to deploy or onto compatible units to merge."
 # Formal content identity (H4B): level title/briefing and unit display names
 # come from data; internal ids stay internal.
 var level_title := ""
@@ -63,7 +63,7 @@ func _initial_status_text() -> String:
 			has_available_recipe = true
 			break
 	if has_available_recipe:
-		return "Drag cards to deploy. Drag a unit onto another to merge."
+		return "Drag cards to deploy or onto compatible units to merge."
 	return "Drag cards to deploy."
 
 func _wave_total() -> int:
@@ -205,27 +205,27 @@ func _refund_dev_spend(resource_before: int, result: Dictionary) -> void:
 func _begin_drag(point: Vector2) -> void:
 	if session == null or session.state != BattleSession.STATE_RUNNING:
 		return
+	drag_payload = {}
 	var card := _card_at(point)
 	if not card.is_empty():
 		drag_payload = {"kind": "card", "unit_id": String(card["unit_id"])}
-		return
-	var cell := _cell_from_point(point)
-	var value = session.board.cell_value(cell)
-	if value is UnitState:
-		drag_payload = {"kind": "unit", "source": cell, "unit_id": value.unit_id}
 
 func _finish_drag(point: Vector2) -> void:
 	if drag_payload.is_empty() or session == null:
 		return
 	var resource_before := session.resources.amount
 	var target := _cell_from_point(point)
-	var result: Dictionary
-	if drag_payload["kind"] == "card":
-		result = session.deploy(String(drag_payload["unit_id"]), target)
-		status_text = "Deployed." if result.get("ok", false) else "Rejected: %s" % result.get("reason", "unknown")
+	var result := {"ok": false, "reason": "invalid_drag"}
+	if drag_payload.get("kind", "") == "card":
+		result = session.play_card(String(drag_payload["unit_id"]), target)
+	if result.get("ok", false):
+		status_text = (
+			"Merged -> %s" % _display_name_for_unit(String(result.get("result", "")))
+			if result.get("kind", "") == "card_fusion"
+			else "Deployed."
+		)
 	else:
-		result = session.merge_cells(drag_payload["source"], target)
-		status_text = "Merged -> %s" % _display_name_for_unit(String(result.get("result", ""))) if result.get("ok", false) else "Rejected: %s" % result.get("reason", "unknown")
+		status_text = "Rejected: %s" % result.get("reason", "unknown")
 	_refund_dev_spend(resource_before, result)
 	drag_payload = {}
 	hover_cell = Vector2i(-1, -1)
@@ -283,8 +283,8 @@ func _draw_board(font: Font) -> void:
 		_draw_enemy(center, enemy, font)
 	if session.board.is_inside(hover_cell):
 		var preview_color := Color(0.25, 0.85, 1.0, 0.28)
-		if drag_payload.get("kind", "") == "unit":
-			var recipe := session.fusion_preview(drag_payload["source"], hover_cell)
+		if drag_payload.get("kind", "") == "card" and session.board.cell_value(hover_cell) != null:
+			var recipe := session.card_fusion_preview(String(drag_payload.get("unit_id", "")), hover_cell)
 			preview_color = Color(0.3, 1.0, 0.5, 0.38) if not recipe.is_empty() else Color(1.0, 0.25, 0.25, 0.28)
 		draw_rect(_cell_rect(hover_cell).grow(-3.0), preview_color, true)
 
@@ -413,7 +413,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 func _draw_drag_preview(font: Font) -> void:
 	var unit_id := String(drag_payload.get("unit_id", ""))
 	_draw_unit(pointer_position, unit_id, font)
-	if drag_payload.get("kind", "") == "unit" and session.board.is_inside(hover_cell):
-		var recipe := session.fusion_preview(drag_payload["source"], hover_cell)
+	if drag_payload.get("kind", "") == "card" and session.board.is_inside(hover_cell):
+		var recipe := session.card_fusion_preview(unit_id, hover_cell)
 		if not recipe.is_empty():
 			draw_string(font, pointer_position + Vector2(-80, -42), "-> %s" % _display_name_for_unit(String(recipe.get("result", ""))), HORIZONTAL_ALIGNMENT_CENTER, 160, 15, Color(0.35, 1.0, 0.58))

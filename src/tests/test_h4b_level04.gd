@@ -163,6 +163,88 @@ func test_world01_04_allows_only_a1_upgrade_and_spends_recipe_cost() -> void:
 	assert_eq(battle.resources.amount, before - 30)
 	assert_eq((battle.board.cell_value(Vector2i(1, 0)) as UnitState).unit_id, "unit_a_2")
 
+func test_card_play_to_empty_cell_keeps_deploy_cost_semantics() -> void:
+	var battle := BattleSession.new(_load_world01_04_repo())
+	var before := battle.resources.amount
+	var result := battle.play_card("unit_a_1", Vector2i(0, 0))
+	assert_true(result.get("ok", false), str(result))
+	assert_eq(String(result.get("kind")), "deploy")
+	assert_eq(battle.resources.amount, before - 50)
+	assert_eq((battle.board.cell_value(Vector2i(0, 0)) as UnitState).unit_id, "unit_a_1")
+
+func test_card_a1_onto_existing_a1_atomically_buys_and_upgrades_for_80() -> void:
+	var battle := BattleSession.new(_load_world01_04_repo())
+	var target := Vector2i(2, 0)
+	assert_true(battle.deploy("unit_a_1", target)["ok"])
+	var before := battle.resources.amount
+	var result := battle.play_card("unit_a_1", target)
+	assert_true(result.get("ok", false), str(result))
+	assert_eq(String(result.get("kind")), "card_fusion")
+	assert_eq(String(result.get("recipe_id")), "upgrade_a_1_to_2")
+	assert_eq(int(result.get("card_cost")), 50)
+	assert_eq(int(result.get("recipe_cost")), 30)
+	assert_eq(int(result.get("resource_before")) - int(result.get("resource_after")), 80)
+	assert_eq(battle.resources.amount, before - 80)
+	assert_eq(battle.board.unit_positions(), [target],
+		"card fusion replaces the target without creating a temporary second unit")
+	assert_eq((battle.board.cell_value(target) as UnitState).unit_id, "unit_a_2")
+
+func test_card_fusion_with_only_79_is_rejected_without_pollution() -> void:
+	var battle := BattleSession.new(_load_world01_04_repo())
+	var target := Vector2i(2, 0)
+	assert_true(battle.deploy("unit_a_1", target)["ok"])
+	var original: UnitState = battle.board.cell_value(target)
+	battle.resources.amount = 79
+	var result := battle.play_card("unit_a_1", target)
+	assert_eq(String(result.get("reason")), "insufficient_resource")
+	assert_eq(battle.resources.amount, 79)
+	assert_same(battle.board.cell_value(target), original)
+	assert_eq(battle.board.unit_positions(), [target])
+
+func test_card_fusion_gate_and_missing_recipe_fail_without_pollution() -> void:
+	var battle := BattleSession.new(_load_world01_04_repo())
+	var b_cell := Vector2i(1, 1)
+	var c_cell := Vector2i(2, 1)
+	assert_true(battle.deploy("unit_b_1", b_cell)["ok"])
+	assert_true(battle.deploy("unit_c_1", c_cell)["ok"])
+	var b_original: UnitState = battle.board.cell_value(b_cell)
+	var c_original: UnitState = battle.board.cell_value(c_cell)
+	var before := battle.resources.amount
+	var gated := battle.play_card("unit_a_1", b_cell)
+	var missing := battle.play_card("unit_a_1", c_cell)
+	assert_eq(String(gated.get("reason")), "recipe_disabled_in_level")
+	assert_eq(String(missing.get("reason")), "illegal_recipe")
+	assert_eq(battle.resources.amount, before)
+	assert_same(battle.board.cell_value(b_cell), b_original)
+	assert_same(battle.board.cell_value(c_cell), c_original)
+
+func test_card_fusion_keeps_worse_health_ratio_without_free_heal() -> void:
+	var battle := BattleSession.new(_load_world01_04_repo())
+	var target := Vector2i(2, 0)
+	assert_true(battle.deploy("unit_a_1", target)["ok"])
+	var wounded: UnitState = battle.board.cell_value(target)
+	wounded.health = wounded.max_health / 2
+	wounded.attack_cooldown = 2.5
+	var result := battle.play_card("unit_a_1", target)
+	assert_true(result.get("ok", false), str(result))
+	var upgraded: UnitState = battle.board.cell_value(target)
+	assert_eq(upgraded.health, int(round(float(upgraded.max_health) * 0.5)))
+	assert_eq(upgraded.attack_cooldown, 2.5)
+	assert_lt(upgraded.health, upgraded.max_health)
+
+func test_card_play_invalid_target_and_stopped_battle_are_atomic() -> void:
+	var battle := BattleSession.new(_load_world01_04_repo())
+	var before := battle.resources.amount
+	var invalid := battle.play_card("unit_a_1", Vector2i(-1, 0))
+	assert_eq(String(invalid.get("reason")), "invalid_cell")
+	assert_eq(battle.resources.amount, before)
+	assert_true(battle.board.unit_positions().is_empty())
+	battle.state = BattleSession.STATE_FAILURE
+	var stopped := battle.play_card("unit_a_1", Vector2i(0, 0))
+	assert_eq(String(stopped.get("reason")), "battle_not_running")
+	assert_eq(battle.resources.amount, before)
+	assert_true(battle.board.unit_positions().is_empty())
+
 func test_world01_04_fusions_ui_lists_only_the_enabled_upgrade() -> void:
 	var screen_script = load("res://src/ui/battle_screen.gd")
 	var screen = screen_script.new()
@@ -171,6 +253,68 @@ func test_world01_04_fusions_ui_lists_only_the_enabled_upgrade() -> void:
 	assert_eq(visible.size(), 1)
 	assert_eq(String(visible[0].get("id")), "upgrade_a_1_to_2")
 	assert_eq(String(visible[0].get("result")), "unit_a_2")
+	assert_eq(screen.status_text, "Drag cards to deploy or onto compatible units to merge.")
+	screen.free()
+
+func _mouse_input(screen, position: Vector2, pressed: bool) -> void:
+	var event := InputEventMouseButton.new()
+	event.button_index = MOUSE_BUTTON_LEFT
+	event.pressed = pressed
+	event.position = position
+	screen._unhandled_input(event)
+
+func _drag_card_to_cell(screen, card_index: int, cell: Vector2i) -> void:
+	var card_rect: Rect2 = screen.deck_cards[card_index]["rect"]
+	_mouse_input(screen, card_rect.get_center(), true)
+	_mouse_input(screen, screen._cell_rect(cell).get_center(), false)
+
+func test_battle_screen_card_drag_deploys_then_fuses_with_formal_name() -> void:
+	var screen_script = load("res://src/ui/battle_screen.gd")
+	var screen = screen_script.new()
+	assert_true(screen._load_level_by_id("world01_04"))
+	var target := Vector2i(2, 0)
+	_drag_card_to_cell(screen, 0, target)
+	assert_eq(screen.session.resources.amount, 200)
+	_drag_card_to_cell(screen, 0, target)
+	assert_eq(screen.session.resources.amount, 120)
+	assert_eq((screen.session.board.cell_value(target) as UnitState).unit_id, "unit_a_2")
+	assert_eq(screen.session.board.unit_positions(), [target])
+	assert_eq(screen.status_text, "Merged -> \u718a\u5927 II")
+	assert_false(screen.status_text.contains("unit_a_2"))
+	screen.free()
+
+func test_card_hover_preview_respects_gate_and_uses_formal_result_name() -> void:
+	var screen_script = load("res://src/ui/battle_screen.gd")
+	var screen = screen_script.new()
+	assert_true(screen._load_level_by_id("world01_04"))
+	var a_cell := Vector2i(2, 0)
+	var b_cell := Vector2i(2, 1)
+	assert_true(screen.session.deploy("unit_a_1", a_cell)["ok"])
+	assert_true(screen.session.deploy("unit_b_1", b_cell)["ok"])
+	var allowed: Dictionary = screen.session.card_fusion_preview("unit_a_1", a_cell)
+	assert_eq(String(allowed.get("id")), "upgrade_a_1_to_2")
+	assert_eq(screen._display_name_for_unit(String(allowed.get("result"))), "\u718a\u5927 II")
+	assert_true(screen.session.card_fusion_preview("unit_a_1", b_cell).is_empty(),
+		"the locked A1+B1 recipe must not appear in card hover preview")
+	screen.free()
+
+func test_battle_screen_does_not_start_or_execute_field_unit_drag_merge() -> void:
+	var screen_script = load("res://src/ui/battle_screen.gd")
+	var screen = screen_script.new()
+	assert_true(screen._load_level_by_id("world01_04"))
+	var source := Vector2i(1, 0)
+	var target := Vector2i(2, 0)
+	assert_true(screen.session.deploy("unit_a_1", source)["ok"])
+	assert_true(screen.session.deploy("unit_a_1", target)["ok"])
+	var source_unit: UnitState = screen.session.board.cell_value(source)
+	var target_unit: UnitState = screen.session.board.cell_value(target)
+	var before: int = screen.session.resources.amount
+	_mouse_input(screen, screen._cell_rect(source).get_center(), true)
+	assert_true(screen.drag_payload.is_empty())
+	_mouse_input(screen, screen._cell_rect(target).get_center(), false)
+	assert_same(screen.session.board.cell_value(source), source_unit)
+	assert_same(screen.session.board.cell_value(target), target_unit)
+	assert_eq(screen.session.resources.amount, before)
 	screen.free()
 
 func _make_a2(battle: BattleSession, source: Vector2i, target: Vector2i) -> void:
@@ -236,13 +380,14 @@ func test_dev_infinite_refunds_real_upgrade_and_keeps_producer_income() -> void:
 	screen.dev_infinite_resources = true
 	assert_true(screen.session.deploy("unit_c_1", Vector2i(0, 4))["ok"])
 	assert_true(screen.session.deploy("unit_a_1", Vector2i(0, 0))["ok"])
-	assert_true(screen.session.deploy("unit_a_1", Vector2i(1, 0))["ok"])
 	var before_merge: int = screen.session.resources.amount
-	screen.drag_payload = {"kind": "unit", "source": Vector2i(0, 0), "unit_id": "unit_a_1"}
-	screen._finish_drag(screen._cell_rect(Vector2i(1, 0)).get_center())
+	screen.drag_payload = {"kind": "card", "unit_id": "unit_a_1"}
+	screen._finish_drag(screen._cell_rect(Vector2i(0, 0)).get_center())
 	assert_eq(screen.session.resources.amount, before_merge,
-		"DEV infinite must refund the real 30-resource upgrade cost")
-	assert_eq((screen.session.board.cell_value(Vector2i(1, 0)) as UnitState).unit_id, "unit_a_2")
+		"DEV infinite must refund the full 50 card + 30 recipe cost")
+	assert_eq((screen.session.board.cell_value(Vector2i(0, 0)) as UnitState).unit_id, "unit_a_2")
+	assert_eq(screen.session.board.unit_positions().size(), 2,
+		"only the producer and upgraded target should exist")
 	assert_eq(screen.status_text, "Merged -> \u718a\u5927 II")
 	assert_false(screen.status_text.contains("unit_a_2"))
 	screen.session.tick(8.0)
@@ -264,8 +409,7 @@ func _run_world01_04_strategy(use_upgrade: bool) -> Dictionary:
 	results.append(battle.deploy("unit_c_1", Vector2i(0, 4)))
 	results.append(battle.deploy("unit_a_1", Vector2i(2, 2)))
 	if use_upgrade:
-		results.append(battle.deploy("unit_a_1", Vector2i(1, 2)))
-		results.append(battle.merge_cells(Vector2i(1, 2), Vector2i(2, 2)))
+		results.append(battle.play_card("unit_a_1", Vector2i(2, 2)))
 	var base_schedule: Array[Dictionary] = [
 		{"at": 8.0, "unit_id": "unit_a_1", "cell": Vector2i(2, 1)},
 		{"at": 24.0, "unit_id": "unit_b_1", "cell": Vector2i(4, 1)},
