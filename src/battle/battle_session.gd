@@ -81,6 +81,60 @@ func deploy(unit_id: String, cell: Vector2i) -> Dictionary:
 	resources.spend(cost)
 	return {"ok": true, "kind": "deploy", "unit_id": unit_id, "cell": cell}
 
+func play_card(unit_id: String, target: Vector2i, now_ms: int = -1) -> Dictionary:
+	if state != STATE_RUNNING:
+		return _reject("battle_not_running")
+	var definition := repository.unit_def(unit_id)
+	if definition.is_empty():
+		return _reject("unknown_unit")
+	if not board.is_inside(target):
+		return _reject("invalid_cell")
+	var target_value = board.cell_value(target)
+	if target_value == null:
+		return deploy(unit_id, target)
+	if target_value is not UnitState:
+		return _reject("cell_occupied")
+
+	# A card played onto an existing unit is one atomic purchase + fusion.
+	# FusionService remains the single owner of recipe legality and inherited
+	# runtime state; the card input starts as a newly purchased full-state unit.
+	var card_unit := UnitState.from_definition(definition)
+	var plan := fusion.build_plan(card_unit, target_value)
+	if plan.is_empty():
+		return _reject("illegal_recipe")
+	if recipe_gate_active and not enabled_recipe_ids.has(String(plan.get("recipe_id", ""))):
+		return _reject("recipe_disabled_in_level")
+	var card_cost := int(definition.get("cost", 0))
+	var recipe_cost := int(plan.get("resource_cost", 0))
+	var total_cost := card_cost + recipe_cost
+	if not resources.can_spend(total_cost):
+		return _reject("insufficient_resource")
+
+	# Every rejection above leaves both resources and board untouched. The
+	# target is known to contain a UnitState, so replacement cannot require a
+	# temporary second board cell.
+	var result: UnitState = plan["unit"]
+	var before_resource := resources.amount
+	board.remove_unit(target)
+	board.place_unit(target, result)
+	resources.spend(total_cost)
+	var effective_now := Time.get_ticks_msec() if now_ms < 0 else now_ms
+	last_merge_receipt = {
+		"ok": true,
+		"recipe_id": plan.get("recipe_id", ""),
+		"kind": "card_fusion",
+		"fusion_kind": plan.get("kind", ""),
+		"result": String(plan.get("result_unit", "")),
+		"target_cell": target,
+		"card_cost": card_cost,
+		"recipe_cost": recipe_cost,
+		"resource_before": before_resource,
+		"resource_after": resources.amount,
+		"undo_deadline_ms": effective_now + UNDO_WINDOW_MS,
+		"undo_implemented": false,
+	}
+	return last_merge_receipt.duplicate(true)
+
 func merge_cells(source: Vector2i, target: Vector2i, now_ms: int = -1) -> Dictionary:
 	if state != STATE_RUNNING:
 		return _reject("battle_not_running")
@@ -291,6 +345,20 @@ func fusion_preview(source: Vector2i, target: Vector2i) -> Dictionary:
 		return {}
 	# Respect the level recipe gate so the drag-preview highlight matches what
 	# merge_cells would actually allow.
+	if recipe_gate_active and not enabled_recipe_ids.has(String(recipe.get("id", ""))):
+		return {}
+	return recipe
+
+func card_fusion_preview(unit_id: String, target: Vector2i) -> Dictionary:
+	if state != STATE_RUNNING or not board.is_inside(target):
+		return {}
+	var definition := repository.unit_def(unit_id)
+	var target_unit = board.cell_value(target)
+	if definition.is_empty() or target_unit is not UnitState:
+		return {}
+	var recipe := fusion.preview(unit_id, target_unit.unit_id)
+	if recipe.is_empty():
+		return {}
 	if recipe_gate_active and not enabled_recipe_ids.has(String(recipe.get("id", ""))):
 		return {}
 	return recipe

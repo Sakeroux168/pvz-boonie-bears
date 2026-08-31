@@ -19,7 +19,7 @@ var pointer_router := PointerRouter.new()
 var drag_payload: Dictionary = {}
 var pointer_position := Vector2.ZERO
 var hover_cell := Vector2i(-1, -1)
-var status_text := "Drag cards to deploy. Drag a unit onto another to merge."
+var status_text := "Drag cards to deploy or onto compatible units to merge."
 # Formal content identity (H4B): level title/briefing and unit display names
 # come from data; internal ids stay internal.
 var level_title := ""
@@ -63,7 +63,7 @@ func _initial_status_text() -> String:
 			has_available_recipe = true
 			break
 	if has_available_recipe:
-		return "Drag cards to deploy. Drag a unit onto another to merge."
+		return "Drag cards to deploy or onto compatible units to merge."
 	return "Drag cards to deploy."
 
 func _wave_total() -> int:
@@ -205,27 +205,27 @@ func _refund_dev_spend(resource_before: int, result: Dictionary) -> void:
 func _begin_drag(point: Vector2) -> void:
 	if session == null or session.state != BattleSession.STATE_RUNNING:
 		return
+	drag_payload = {}
 	var card := _card_at(point)
 	if not card.is_empty():
 		drag_payload = {"kind": "card", "unit_id": String(card["unit_id"])}
-		return
-	var cell := _cell_from_point(point)
-	var value = session.board.cell_value(cell)
-	if value is UnitState:
-		drag_payload = {"kind": "unit", "source": cell, "unit_id": value.unit_id}
 
 func _finish_drag(point: Vector2) -> void:
 	if drag_payload.is_empty() or session == null:
 		return
 	var resource_before := session.resources.amount
 	var target := _cell_from_point(point)
-	var result: Dictionary
-	if drag_payload["kind"] == "card":
-		result = session.deploy(String(drag_payload["unit_id"]), target)
-		status_text = "Deployed." if result.get("ok", false) else "Rejected: %s" % result.get("reason", "unknown")
+	var result := {"ok": false, "reason": "invalid_drag"}
+	if drag_payload.get("kind", "") == "card":
+		result = session.play_card(String(drag_payload["unit_id"]), target)
+	if result.get("ok", false):
+		status_text = (
+			"Merged -> %s" % _display_name_for_unit(String(result.get("result", "")))
+			if result.get("kind", "") == "card_fusion"
+			else "Deployed."
+		)
 	else:
-		result = session.merge_cells(drag_payload["source"], target)
-		status_text = "Merged -> %s" % result.get("result", "") if result.get("ok", false) else "Rejected: %s" % result.get("reason", "unknown")
+		status_text = "Rejected: %s" % result.get("reason", "unknown")
 	_refund_dev_spend(resource_before, result)
 	drag_payload = {}
 	hover_cell = Vector2i(-1, -1)
@@ -283,8 +283,8 @@ func _draw_board(font: Font) -> void:
 		_draw_enemy(center, enemy, font)
 	if session.board.is_inside(hover_cell):
 		var preview_color := Color(0.25, 0.85, 1.0, 0.28)
-		if drag_payload.get("kind", "") == "unit":
-			var recipe := session.fusion_preview(drag_payload["source"], hover_cell)
+		if drag_payload.get("kind", "") == "card" and session.board.cell_value(hover_cell) != null:
+			var recipe := session.card_fusion_preview(String(drag_payload.get("unit_id", "")), hover_cell)
 			preview_color = Color(0.3, 1.0, 0.5, 0.38) if not recipe.is_empty() else Color(1.0, 0.25, 0.25, 0.28)
 		draw_rect(_cell_rect(hover_cell).grow(-3.0), preview_color, true)
 
@@ -328,9 +328,16 @@ func _draw_tree(center: Vector2, tree: Dictionary, font: Font) -> void:
 	draw_string(font, center + Vector2(-45, 46), "tree %d" % int(tree.get("health", 0)), HORIZONTAL_ALIGNMENT_CENTER, 90, 12, Color(0.92, 0.82, 0.65))
 
 func _draw_enemy(center: Vector2, enemy: EnemyState, font: Font) -> void:
-	var color := Color(0.78, 0.28, 0.85) if enemy.prefers_tree else Color(1.0, 0.25, 0.32)
-	var points := PackedVector2Array([center + Vector2(-26, -23), center + Vector2(28, 0), center + Vector2(-26, 23)])
-	draw_colored_polygon(points, color)
+	if enemy.enemy_id == "enemy_armored":
+		var armor_rect := Rect2(center - Vector2(29, 25), Vector2(58, 50))
+		draw_rect(armor_rect, Color(0.25, 0.31, 0.38), true)
+		draw_rect(armor_rect.grow(-6.0), Color(0.48, 0.58, 0.67), true)
+		draw_circle(center + Vector2(-17, 25), 7.0, Color(0.08, 0.1, 0.12))
+		draw_circle(center + Vector2(17, 25), 7.0, Color(0.08, 0.1, 0.12))
+	else:
+		var color := Color(0.78, 0.28, 0.85) if enemy.prefers_tree else Color(1.0, 0.25, 0.32)
+		var points := PackedVector2Array([center + Vector2(-26, -23), center + Vector2(28, 0), center + Vector2(-26, 23)])
+		draw_colored_polygon(points, color)
 	draw_string(font, center + Vector2(-42, 43), "%s %d" % [_display_name_for_enemy(enemy.enemy_id), enemy.health], HORIZONTAL_ALIGNMENT_CENTER, 100, 11, Color.WHITE)
 
 func _draw_cards(font: Font) -> void:
@@ -355,10 +362,7 @@ func _draw_cards(font: Font) -> void:
 	# Recipe hints are data-driven and level-gated: only recipes enabled by the
 	# current level's enabled_recipe_ids are shown (GPT review on PR #8).
 	var shown := 0
-	for recipe in repository.recipes:
-		var recipe_id := String(recipe.get("id", ""))
-		if session.recipe_gate_active and not session.enabled_recipe_ids.has(recipe_id):
-			continue
+	for recipe in _visible_recipes():
 		draw_string(font, Vector2(1060, fusion_title_y + 25.0 + shown * 25.0),
 				"%s + %s -> %s" % [_display_name_for_unit(String(recipe.get("input_a", ""))),
 						_display_name_for_unit(String(recipe.get("input_b", ""))),
@@ -367,6 +371,15 @@ func _draw_cards(font: Font) -> void:
 		shown += 1
 	if shown == 0:
 		draw_string(font, Vector2(1060, fusion_title_y + 25.0), "\u672c\u5173\u672a\u89e3\u9501\u5408\u6210", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.5, 0.55, 0.6))
+
+func _visible_recipes() -> Array:
+	var visible: Array = []
+	for recipe in repository.recipes:
+		var recipe_id := String(recipe.get("id", ""))
+		if session.recipe_gate_active and not session.enabled_recipe_ids.has(recipe_id):
+			continue
+		visible.append(recipe)
+	return visible
 
 func _draw_dev_controls(font: Font) -> void:
 	draw_string(font, Vector2(1040, 505), "DEV TOOLS", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(1.0, 0.75, 0.35))
@@ -400,7 +413,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 func _draw_drag_preview(font: Font) -> void:
 	var unit_id := String(drag_payload.get("unit_id", ""))
 	_draw_unit(pointer_position, unit_id, font)
-	if drag_payload.get("kind", "") == "unit" and session.board.is_inside(hover_cell):
-		var recipe := session.fusion_preview(drag_payload["source"], hover_cell)
+	if drag_payload.get("kind", "") == "card" and session.board.is_inside(hover_cell):
+		var recipe := session.card_fusion_preview(unit_id, hover_cell)
 		if not recipe.is_empty():
-			draw_string(font, pointer_position + Vector2(-80, -42), "-> %s" % recipe.get("result", ""), HORIZONTAL_ALIGNMENT_CENTER, 160, 15, Color(0.35, 1.0, 0.58))
+			draw_string(font, pointer_position + Vector2(-80, -42), "-> %s" % _display_name_for_unit(String(recipe.get("result", ""))), HORIZONTAL_ALIGNMENT_CENTER, 160, 15, Color(0.35, 1.0, 0.58))
