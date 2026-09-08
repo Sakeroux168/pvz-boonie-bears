@@ -16,5 +16,15 @@
     "attack_damage": 14,
     "attack_period": 1.0,
     "prefers_tree": true
+  },
+  "enemy_armored": {
+    "id": "enemy_armored",
+    "display_name": "\u94c1\u76ae\u4f10\u6728\u8f66",
+    "move_speed": 0.30,
+    "max_health": 110,
+    "attack_damage": 12,
+    "attack_period": 1.0,
+    "armor": 7,
+    "prefers_tree": false
   }
 }

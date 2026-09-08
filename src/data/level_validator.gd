@@ -159,6 +159,8 @@ static func _validate_enemies(enemies: Dictionary, problems: Array[String]) -> v
 			problems.append("enemy '%s' move_speed must be >= 0 (got %s)" % [enemy_id, str(def.get("move_speed"))])
 		if int(def.get("attack_damage", 0)) < 0:
 			problems.append("enemy '%s' attack_damage must be >= 0 (got %s)" % [enemy_id, str(def.get("attack_damage"))])
+		if int(def.get("armor", 0)) < 0:
+			problems.append("enemy '%s' armor must be >= 0 (got %s)" % [enemy_id, str(def.get("armor"))])
 		if float(def.get("attack_period", 0)) <= 0.0:
 			problems.append("enemy '%s' attack_period must be > 0 (got %s)" % [enemy_id, str(def.get("attack_period"))])
 

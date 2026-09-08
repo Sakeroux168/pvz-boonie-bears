@@ -12,6 +12,7 @@
     "unit_c_1"
   ],
   "enabled_recipe_ids": [],
+  "next_level_id": "world01_04",
   "protected_trees": [],
   "waves": [
     {"at": 12.0, "lane": 2, "enemy": "enemy_basic", "health_override": 120, "start_column_override": 6.0},

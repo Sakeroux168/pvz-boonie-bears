@@ -382,6 +382,23 @@ func test_session_merge_still_works_through_plan_boundary() -> void:
 	assert_eq(String(result["kind"]), "fixed_cross_unit_fusion")
 	assert_eq(battle.board.unit_positions().size(), 1)
 
+func test_card_fusion_uses_symmetric_recipe_data_for_both_input_orders() -> void:
+	var card_a_battle := BattleSession.new(repository, _empty_level(1000))
+	assert_true(card_a_battle.deploy("unit_b_1", Vector2i(2, 0))["ok"])
+	var before_a := card_a_battle.resources.amount
+	var card_a_result := card_a_battle.play_card("unit_a_1", Vector2i(2, 0))
+	assert_true(card_a_result.get("ok", false), str(card_a_result))
+	assert_eq(String(card_a_result.get("result")), "unit_ab")
+	assert_eq(card_a_battle.resources.amount, before_a - 150)
+
+	var card_b_battle := BattleSession.new(repository, _empty_level(1000))
+	assert_true(card_b_battle.deploy("unit_a_1", Vector2i(2, 0))["ok"])
+	var before_b := card_b_battle.resources.amount
+	var card_b_result := card_b_battle.play_card("unit_b_1", Vector2i(2, 0))
+	assert_true(card_b_result.get("ok", false), str(card_b_result))
+	assert_eq(String(card_b_result.get("result")), "unit_ab")
+	assert_eq(card_b_battle.resources.amount, before_b - 175)
+
 # --- H4A-3: level/data reference validation ---
 
 func test_validator_accepts_current_shipped_data() -> void:
@@ -925,10 +942,6 @@ func _drag_card_to_cell(screen, card_index: int, cell: Vector2i) -> void:
 	_mouse_input(screen, card_rect.get_center(), true)
 	_mouse_input(screen, screen._cell_rect(cell).get_center(), false)
 
-func _drag_unit_to_cell(screen, source: Vector2i, target: Vector2i) -> void:
-	_mouse_input(screen, screen._cell_rect(source).get_center(), true)
-	_mouse_input(screen, screen._cell_rect(target).get_center(), false)
-
 func _prepare_dev_screen(screen) -> bool:
 	screen.dev_tools_enabled = true
 	if not OS.is_debug_build():
@@ -1007,7 +1020,7 @@ func test_dev_infinite_resources_refunds_deploy_and_off_restores_cost() -> void:
 	assert_eq(screen.session.resources.amount, initial - 100, "OFF deploy spends again")
 	screen.free()
 
-func test_dev_infinite_resources_refunds_legacy_merge_and_off_recharges() -> void:
+func test_dev_infinite_resources_refunds_card_fusion_and_off_recharges() -> void:
 	var screen = _dev_test_screen()
 	screen.repository = repository
 	screen.session = BattleSession.new(repository, _empty_level(1000))
@@ -1016,12 +1029,12 @@ func test_dev_infinite_resources_refunds_legacy_merge_and_off_recharges() -> voi
 		screen.free()
 		return
 	_drag_card_to_cell(screen, 0, Vector2i(1, 0))
-	_drag_card_to_cell(screen, 0, Vector2i(2, 0))
 	var before_merge: int = screen.session.resources.amount
 	_click_screen(screen, screen.DEV_INFINITE_RECT.get_center())
-	_drag_unit_to_cell(screen, Vector2i(1, 0), Vector2i(2, 0))
-	assert_eq(screen.session.resources.amount, before_merge, "ON merge refunds the exact recipe cost")
-	assert_eq((screen.session.board.cell_value(Vector2i(2, 0)) as UnitState).unit_id, "unit_a_2")
+	_drag_card_to_cell(screen, 0, Vector2i(1, 0))
+	assert_eq(screen.session.resources.amount, before_merge,
+		"ON card fusion refunds the exact card plus recipe cost")
+	assert_eq((screen.session.board.cell_value(Vector2i(1, 0)) as UnitState).unit_id, "unit_a_2")
 	_click_screen(screen, screen.DEV_INFINITE_RECT.get_center())
 	_drag_card_to_cell(screen, 0, Vector2i(3, 0))
 	assert_eq(screen.session.resources.amount, before_merge - 50, "OFF deploy spends normally after merge")
