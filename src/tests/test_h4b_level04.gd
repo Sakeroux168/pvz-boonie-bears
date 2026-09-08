@@ -268,6 +268,105 @@ func _drag_card_to_cell(screen, card_index: int, cell: Vector2i) -> void:
 	_mouse_input(screen, card_rect.get_center(), true)
 	_mouse_input(screen, screen._cell_rect(cell).get_center(), false)
 
+func _drag_unit_to_cell(screen, source: Vector2i, target: Vector2i) -> void:
+	_mouse_input(screen, screen._cell_rect(source).get_center(), true)
+	_mouse_input(screen, screen._cell_rect(target).get_center(), false)
+
+func test_battle_screen_field_drag_a1_to_a1_fuses_for_recipe_cost_only() -> void:
+	var screen_script = load("res://src/ui/battle_screen.gd")
+	var screen = screen_script.new()
+	assert_true(screen._load_level_by_id("world01_04"))
+	var source := Vector2i(1, 0)
+	var target := Vector2i(2, 0)
+	_drag_card_to_cell(screen, 0, source)
+	_drag_card_to_cell(screen, 0, target)
+	var before: int = screen.session.resources.amount
+	_drag_unit_to_cell(screen, source, target)
+	assert_eq(screen.session.resources.amount, before - 30)
+	assert_eq(screen.session.board.cell_value(source), null)
+	assert_eq((screen.session.board.cell_value(target) as UnitState).unit_id, "unit_a_2")
+	assert_eq(screen.session.board.unit_positions(), [target])
+	assert_eq(screen.status_text, "Merged -> \u718a\u5927 II")
+	assert_false(screen.status_text.contains("unit_a_2"))
+	screen.free()
+
+func test_battle_screen_field_fusion_under_30_is_atomic() -> void:
+	var screen_script = load("res://src/ui/battle_screen.gd")
+	var screen = screen_script.new()
+	assert_true(screen._load_level_by_id("world01_04"))
+	var source := Vector2i(1, 0)
+	var target := Vector2i(2, 0)
+	_drag_card_to_cell(screen, 0, source)
+	_drag_card_to_cell(screen, 0, target)
+	var source_unit: UnitState = screen.session.board.cell_value(source)
+	var target_unit: UnitState = screen.session.board.cell_value(target)
+	screen.session.resources.amount = 29
+	_drag_unit_to_cell(screen, source, target)
+	assert_eq(screen.session.resources.amount, 29)
+	assert_same(screen.session.board.cell_value(source), source_unit)
+	assert_same(screen.session.board.cell_value(target), target_unit)
+	screen.free()
+
+func test_battle_screen_field_gate_and_empty_target_do_not_mutate() -> void:
+	var screen_script = load("res://src/ui/battle_screen.gd")
+	var screen = screen_script.new()
+	assert_true(screen._load_level_by_id("world01_04"))
+	var a_cell := Vector2i(1, 1)
+	var b_cell := Vector2i(2, 1)
+	var empty_cell := Vector2i(3, 1)
+	_drag_card_to_cell(screen, 0, a_cell)
+	_drag_card_to_cell(screen, 1, b_cell)
+	var a_unit: UnitState = screen.session.board.cell_value(a_cell)
+	var b_unit: UnitState = screen.session.board.cell_value(b_cell)
+	var before: int = screen.session.resources.amount
+	_drag_unit_to_cell(screen, a_cell, b_cell)
+	assert_eq(screen.session.resources.amount, before)
+	assert_same(screen.session.board.cell_value(a_cell), a_unit)
+	assert_same(screen.session.board.cell_value(b_cell), b_unit)
+	_drag_unit_to_cell(screen, a_cell, empty_cell)
+	assert_eq(screen.session.resources.amount, before)
+	assert_same(screen.session.board.cell_value(a_cell), a_unit)
+	assert_eq(screen.session.board.cell_value(empty_cell), null)
+	screen.free()
+
+func test_battle_screen_both_fusion_previews_use_gate_and_formal_name() -> void:
+	var screen_script = load("res://src/ui/battle_screen.gd")
+	var screen = screen_script.new()
+	assert_true(screen._load_level_by_id("world01_04"))
+	var a_cell := Vector2i(1, 0)
+	var b_cell := Vector2i(2, 0)
+	_drag_card_to_cell(screen, 0, a_cell)
+	_drag_card_to_cell(screen, 0, b_cell)
+	var card_recipe: Dictionary = screen.session.card_fusion_preview("unit_a_1", b_cell)
+	assert_eq(String(card_recipe.get("result")), "unit_a_2")
+	screen.drag_payload = {"kind": "unit", "source": a_cell, "unit_id": "unit_a_1"}
+	var field_recipe: Dictionary = screen.session.fusion_preview(a_cell, b_cell)
+	assert_eq(String(field_recipe.get("result")), "unit_a_2")
+	assert_eq(screen._display_name_for_unit(String(field_recipe.get("result"))), "\u718a\u5927 II")
+	var b_target := Vector2i(3, 0)
+	_drag_card_to_cell(screen, 1, b_target)
+	assert_true(screen.session.card_fusion_preview("unit_a_1", b_target).is_empty())
+	assert_true(screen.session.fusion_preview(b_cell, b_target).is_empty())
+	screen.free()
+
+func test_dev_infinite_field_fusion_refunds_only_recipe_cost() -> void:
+	var screen_script = load("res://src/ui/battle_screen.gd")
+	var screen = screen_script.new()
+	assert_true(screen._load_level_by_id("world01_04"))
+	screen.dev_tools_enabled = true
+	if not screen._dev_tools_available():
+		pending("debug-only DEV contract requires a debug build")
+		screen.free()
+		return
+	_drag_card_to_cell(screen, 0, Vector2i(1, 0))
+	_drag_card_to_cell(screen, 0, Vector2i(2, 0))
+	screen.dev_infinite_resources = true
+	var before: int = screen.session.resources.amount
+	_drag_unit_to_cell(screen, Vector2i(1, 0), Vector2i(2, 0))
+	assert_eq(screen.session.resources.amount, before)
+	assert_eq((screen.session.board.cell_value(Vector2i(2, 0)) as UnitState).unit_id, "unit_a_2")
+	screen.free()
+
 func test_battle_screen_card_drag_deploys_then_fuses_with_formal_name() -> void:
 	var screen_script = load("res://src/ui/battle_screen.gd")
 	var screen = screen_script.new()
@@ -298,7 +397,7 @@ func test_card_hover_preview_respects_gate_and_uses_formal_result_name() -> void
 		"the locked A1+B1 recipe must not appear in card hover preview")
 	screen.free()
 
-func test_battle_screen_does_not_start_or_execute_field_unit_drag_merge() -> void:
+func test_battle_screen_field_unit_drag_starts_formal_merge() -> void:
 	var screen_script = load("res://src/ui/battle_screen.gd")
 	var screen = screen_script.new()
 	assert_true(screen._load_level_by_id("world01_04"))
@@ -306,15 +405,15 @@ func test_battle_screen_does_not_start_or_execute_field_unit_drag_merge() -> voi
 	var target := Vector2i(2, 0)
 	assert_true(screen.session.deploy("unit_a_1", source)["ok"])
 	assert_true(screen.session.deploy("unit_a_1", target)["ok"])
-	var source_unit: UnitState = screen.session.board.cell_value(source)
-	var target_unit: UnitState = screen.session.board.cell_value(target)
 	var before: int = screen.session.resources.amount
 	_mouse_input(screen, screen._cell_rect(source).get_center(), true)
-	assert_true(screen.drag_payload.is_empty())
+	assert_eq(String(screen.drag_payload.get("kind")), "unit")
+	assert_eq(screen.drag_payload.get("source"), source)
 	_mouse_input(screen, screen._cell_rect(target).get_center(), false)
-	assert_same(screen.session.board.cell_value(source), source_unit)
-	assert_same(screen.session.board.cell_value(target), target_unit)
-	assert_eq(screen.session.resources.amount, before)
+	assert_eq(screen.session.resources.amount, before - 30)
+	assert_eq(screen.session.board.cell_value(source), null)
+	assert_eq((screen.session.board.cell_value(target) as UnitState).unit_id, "unit_a_2")
+	assert_eq(screen.status_text, "Merged -> \u718a\u5927 II")
 	screen.free()
 
 func _make_a2(battle: BattleSession, source: Vector2i, target: Vector2i) -> void:

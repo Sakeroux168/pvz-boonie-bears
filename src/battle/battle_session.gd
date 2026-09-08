@@ -336,6 +336,8 @@ func _cleanup_enemies() -> void:
 	enemies = enemies.filter(func(enemy): return not enemy.defeated and not enemy.crossed_finish)
 
 func fusion_preview(source: Vector2i, target: Vector2i) -> Dictionary:
+	if source == target:
+		return {}
 	var a = board.cell_value(source)
 	var b = board.cell_value(target)
 	if a is not UnitState or b is not UnitState:

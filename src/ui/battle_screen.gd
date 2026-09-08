@@ -209,6 +209,11 @@ func _begin_drag(point: Vector2) -> void:
 	var card := _card_at(point)
 	if not card.is_empty():
 		drag_payload = {"kind": "card", "unit_id": String(card["unit_id"])}
+		return
+	var cell := _cell_from_point(point)
+	var value = session.board.cell_value(cell)
+	if value is UnitState:
+		drag_payload = {"kind": "unit", "source": cell, "unit_id": value.unit_id}
 
 func _finish_drag(point: Vector2) -> void:
 	if drag_payload.is_empty() or session == null:
@@ -218,10 +223,12 @@ func _finish_drag(point: Vector2) -> void:
 	var result := {"ok": false, "reason": "invalid_drag"}
 	if drag_payload.get("kind", "") == "card":
 		result = session.play_card(String(drag_payload["unit_id"]), target)
+	elif drag_payload.get("kind", "") == "unit":
+		result = session.merge_cells(drag_payload["source"], target)
 	if result.get("ok", false):
 		status_text = (
 			"Merged -> %s" % _display_name_for_unit(String(result.get("result", "")))
-			if result.get("kind", "") == "card_fusion"
+			if result.get("kind", "") != "deploy"
 			else "Deployed."
 		)
 	else:
@@ -285,6 +292,9 @@ func _draw_board(font: Font) -> void:
 		var preview_color := Color(0.25, 0.85, 1.0, 0.28)
 		if drag_payload.get("kind", "") == "card" and session.board.cell_value(hover_cell) != null:
 			var recipe := session.card_fusion_preview(String(drag_payload.get("unit_id", "")), hover_cell)
+			preview_color = Color(0.3, 1.0, 0.5, 0.38) if not recipe.is_empty() else Color(1.0, 0.25, 0.25, 0.28)
+		elif drag_payload.get("kind", "") == "unit" and session.board.cell_value(hover_cell) != null:
+			var recipe := session.fusion_preview(drag_payload["source"], hover_cell)
 			preview_color = Color(0.3, 1.0, 0.5, 0.38) if not recipe.is_empty() else Color(1.0, 0.25, 0.25, 0.28)
 		draw_rect(_cell_rect(hover_cell).grow(-3.0), preview_color, true)
 
@@ -413,7 +423,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 func _draw_drag_preview(font: Font) -> void:
 	var unit_id := String(drag_payload.get("unit_id", ""))
 	_draw_unit(pointer_position, unit_id, font)
+	var recipe: Dictionary = {}
 	if drag_payload.get("kind", "") == "card" and session.board.is_inside(hover_cell):
-		var recipe := session.card_fusion_preview(unit_id, hover_cell)
-		if not recipe.is_empty():
-			draw_string(font, pointer_position + Vector2(-80, -42), "-> %s" % _display_name_for_unit(String(recipe.get("result", ""))), HORIZONTAL_ALIGNMENT_CENTER, 160, 15, Color(0.35, 1.0, 0.58))
+		recipe = session.card_fusion_preview(unit_id, hover_cell)
+	elif drag_payload.get("kind", "") == "unit" and session.board.is_inside(hover_cell):
+		recipe = session.fusion_preview(drag_payload["source"], hover_cell)
+	if not recipe.is_empty():
+		draw_string(font, pointer_position + Vector2(-80, -42), "-> %s" % _display_name_for_unit(String(recipe.get("result", ""))), HORIZONTAL_ALIGNMENT_CENTER, 160, 15, Color(0.35, 1.0, 0.58))
